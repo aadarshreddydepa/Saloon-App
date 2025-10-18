@@ -20,16 +20,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-j_kab1)&q(a9y2e%vt4bo)&o7dtc8ow7s@#s2+qq%u1m@b*+oq'
+SECRET_KEY = 'django-insecure-0c6ybj8%3uz8%r9l@0wr5s+iomc6b*bi=3*%(7a+ci!on%b=4z'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = []
 
-AUTH_USER_MODEL = 'core.User'
 
 # Application definition
+AUTH_USER_MODEL = 'core.User'
+
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -38,7 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
-    # Third party apps
+    # Third party
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -48,16 +50,23 @@ INSTALLED_APPS = [
     'core',
 ]
 
+# Add this for media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Add this for static files
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'static'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = 'salon_backend.urls'
