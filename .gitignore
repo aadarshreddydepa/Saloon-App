@@ -11,3 +11,6 @@ staticfiles/
 .DS_Store
 core/firebase/credentials.json
 EOF
+node_modules
+assets
+SaloonFE/node_modules
