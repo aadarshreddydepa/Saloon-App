@@ -45,18 +45,38 @@ export const salonAPI = {
   getNearby: (lat: number, lng: number, radius: number) =>
     api.get(`/salons/nearby/?latitude=${lat}&longitude=${lng}&radius=${radius}`),
   create: (data: any) => api.post('/salons/', data),
+  update: (id: number, data: any) => api.put(`/salons/${id}/`, data),
+  delete: (id: number) => api.delete(`/salons/${id}/`),
 };
 
 export const bookingAPI = {
   getAll: () => api.get('/bookings/'),
   getById: (id: number) => api.get(`/bookings/${id}/`),
   create: (data: any) => api.post('/bookings/', data),
+  update: (id: number, data: any) => api.patch(`/bookings/${id}/`, data),
   cancel: (id: number) => api.post(`/bookings/${id}/cancel/`),
+  complete: (id: number) => api.post(`/bookings/${id}/complete/`),
 };
 
 export const serviceAPI = {
   getAll: () => api.get('/services/'),
   getBySalon: (salonId: number) => api.get(`/services/?salon=${salonId}`),
+  create: (data: any) => api.post('/services/', data),
+  update: (id: number, data: any) => api.put(`/services/${id}/`, data),
+  delete: (id: number) => api.delete(`/services/${id}/`),
+};
+
+export const barberAPI = {
+  getAll: () => api.get('/barbers/'),
+  getBySalon: (salonId: number) => api.get(`/barbers/?salon=${salonId}`),
+  getById: (id: number) => api.get(`/barbers/${id}/`),
+  create: (data: any) => api.post('/barbers/', data),
+  update: (id: number, data: any) => api.patch(`/barbers/${id}/`, data),
+  // Custom endpoints for join requests
+  sendJoinRequest: (salonId: number, data: any) => api.post(`/barbers/join-request/${salonId}/`, data),
+  getJoinRequests: (salonId: number) => api.get(`/barbers/join-requests/?salon=${salonId}`),
+  approveRequest: (requestId: number) => api.post(`/barbers/approve-request/${requestId}/`),
+  rejectRequest: (requestId: number) => api.post(`/barbers/reject-request/${requestId}/`),
 };
 
 export const reviewAPI = {
