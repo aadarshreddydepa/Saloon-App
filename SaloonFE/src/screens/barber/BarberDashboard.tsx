@@ -15,6 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { bookingAPI, barberAPI } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
+import { 
+  notifyBookingConfirmed, 
+  notifyServiceStarted, 
+  notifyServiceCompleted 
+} from '../../utils/notificationHelpers';
 
 const { width } = Dimensions.get('window');
 
@@ -40,6 +45,9 @@ export default function BarberDashboard() {
   useEffect(() => {
     if (barberInfo?.salon) {
       fetchBookings();
+      // Poll for new bookings every 30 seconds
+      const interval = setInterval(fetchBookings, 30000);
+      return () => clearInterval(interval);
     }
   }, [barberInfo]);
 
@@ -69,20 +77,29 @@ export default function BarberDashboard() {
   const handleAssignToMe = async (booking: any) => {
     Alert.alert(
       'Accept Booking',
-      'Do you want to accept this booking? It will be automatically confirmed.',
+      'Do you want to accept this booking? Customer will be notified.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Accept & Confirm',
           onPress: async () => {
             try {
-              // Backend will auto-confirm when barber is assigned
+              // Backend auto-confirms when barber is assigned
               await bookingAPI.assignBarber(booking.id, barberInfo.id);
+              
+              // 🔔 Notify customer that booking is confirmed
+              await notifyBookingConfirmed(
+                booking.salon_name,
+                booking.service_name,
+                booking.booking_date,
+                booking.booking_time
+              );
+              
               setModalVisible(false);
               fetchBookings();
               Alert.alert(
                 '✅ Success!', 
-                'Booking accepted and confirmed!\nCustomer will be notified.'
+                'Booking accepted and confirmed!\nCustomer has been notified.'
               );
             } catch (error: any) {
               Alert.alert('Error', error.response?.data?.error || 'Failed to assign booking');
@@ -93,7 +110,7 @@ export default function BarberDashboard() {
     );
   };
 
-  const handleUpdateStatus = async (bookingId: number, status: string) => {
+  const handleUpdateStatus = async (bookingId: number, status: string, booking: any) => {
     const statusMessages: any = {
       'in_progress': 'Start this service?',
       'completed': 'Mark this service as completed?',
@@ -109,12 +126,26 @@ export default function BarberDashboard() {
           onPress: async () => {
             try {
               await bookingAPI.update(bookingId, { status });
+              
+              // 🔔 Notify customer based on status
+              if (status === 'in_progress') {
+                await notifyServiceStarted(
+                  booking.salon_name,
+                  booking.service_name
+                );
+              } else if (status === 'completed') {
+                await notifyServiceCompleted(
+                  booking.salon_name,
+                  booking.service_name
+                );
+              }
+              
               setModalVisible(false);
               fetchBookings();
               
               const successMessages: any = {
-                'in_progress': '✂️ Service started!',
-                'completed': '✅ Service completed!\nGreat job!',
+                'in_progress': '✂️ Service started! Customer notified.',
+                'completed': '✅ Service completed! Customer notified.',
               };
               
               Alert.alert('Success', successMessages[status] || 'Status updated');
@@ -244,6 +275,15 @@ export default function BarberDashboard() {
               </View>
             </View>
 
+            {stats.unassigned > 0 && (
+              <View style={[styles.alertBanner, { backgroundColor: '#FF980020' }]}>
+                <Ionicons name="notifications" size={20} color="#FF9800" />
+                <Text style={[styles.alertText, { color: '#FF9800' }]}>
+                  {stats.unassigned} new booking{stats.unassigned > 1 ? 's' : ''} waiting for assignment!
+                </Text>
+              </View>
+            )}
+
             <View style={[styles.filterContainer, { backgroundColor: theme.card }]}>
               <TouchableOpacity
                 style={[styles.filterTab, filter === 'unassigned' && { backgroundColor: '#FF9800' }]}
@@ -298,7 +338,8 @@ export default function BarberDashboard() {
                         </Text>
                         {!booking.barber && (
                           <View style={styles.unassignedBadge}>
-                            <Text style={styles.unassignedText}>New Request</Text>
+                            <Ionicons name="alert-circle" size={12} color="#FF9800" />
+                            <Text style={styles.unassignedText}> New</Text>
                           </View>
                         )}
                         {booking.barber === barberInfo?.id && (
@@ -411,18 +452,18 @@ export default function BarberDashboard() {
                     </View>
                   )}
 
-                  {/* Accept Booking Button (for unassigned) */}
+                  {/* Accept Booking Button */}
                   {!selectedBooking.barber && selectedBooking.status === 'pending' && (
                     <TouchableOpacity
                       style={[styles.acceptButton, { backgroundColor: '#4CAF50' }]}
                       onPress={() => handleAssignToMe(selectedBooking)}
                     >
                       <Ionicons name="checkmark-circle" size={24} color="#FFF" />
-                      <Text style={styles.acceptButtonText}>Accept & Confirm</Text>
+                      <Text style={styles.acceptButtonText}>Accept & Notify Customer</Text>
                     </TouchableOpacity>
                   )}
 
-                  {/* Status Update Actions (for assigned bookings) */}
+                  {/* Status Update Actions */}
                   {selectedBooking.barber === barberInfo?.id && (
                     <View style={styles.actionsSection}>
                       <Text style={[styles.actionsTitle, { color: theme.text }]}>
@@ -432,7 +473,7 @@ export default function BarberDashboard() {
                       {selectedBooking.status === 'confirmed' && (
                         <TouchableOpacity
                           style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
-                          onPress={() => handleUpdateStatus(selectedBooking.id, 'in_progress')}
+                          onPress={() => handleUpdateStatus(selectedBooking.id, 'in_progress', selectedBooking)}
                         >
                           <Ionicons name="cut" size={24} color="#FFF" />
                           <Text style={styles.actionButtonText}>Start Service</Text>
@@ -442,7 +483,7 @@ export default function BarberDashboard() {
                       {selectedBooking.status === 'in_progress' && (
                         <TouchableOpacity
                           style={[styles.actionButton, { backgroundColor: '#4CAF50' }]}
-                          onPress={() => handleUpdateStatus(selectedBooking.id, 'completed')}
+                          onPress={() => handleUpdateStatus(selectedBooking.id, 'completed', selectedBooking)}
                         >
                           <Ionicons name="checkmark-done" size={24} color="#FFF" />
                           <Text style={styles.actionButtonText}>Complete Service</Text>
@@ -491,6 +532,8 @@ const styles = StyleSheet.create({
   statIconContainer: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   statValue: { fontSize: 24, fontWeight: 'bold', marginBottom: 4 },
   statTitle: { fontSize: 12, textAlign: 'center' },
+  alertBanner: { marginHorizontal: 20, padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  alertText: { fontSize: 14, fontWeight: '600', marginLeft: 10, flex: 1 },
   filterContainer: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 20, padding: 5, borderRadius: 15 },
   filterTab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', marginHorizontal: 3 },
   filterText: { fontSize: 13, fontWeight: '600' },
@@ -498,7 +541,7 @@ const styles = StyleSheet.create({
   bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   bookingMainInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   customerName: { fontSize: 18, fontWeight: 'bold', marginRight: 8 },
-  unassignedBadge: { backgroundColor: '#FF980020', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  unassignedBadge: { backgroundColor: '#FF980020', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, flexDirection: 'row', alignItems: 'center' },
   unassignedText: { color: '#FF9800', fontSize: 11, fontWeight: '600' },
   assignedToMeBadge: { backgroundColor: '#2196F320', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   assignedToMeText: { color: '#2196F3', fontSize: 11, fontWeight: '600' },

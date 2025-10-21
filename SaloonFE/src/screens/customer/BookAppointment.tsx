@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { bookingAPI } from '../../services/api';
+import { scheduleAppointmentReminder } from '../../utils/notificationHelpers';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function BookAppointment() {
@@ -56,16 +57,28 @@ export default function BookAppointment() {
 
       await bookingAPI.create(bookingData);
 
-      Alert.alert('Success', 'Booking confirmed!', [
-        {
-          text: 'View Bookings',
-          onPress: () => navigation.navigate('Bookings' as never),
-        },
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // 🔔 Schedule reminder notification (1 hour before)
+      await scheduleAppointmentReminder(
+        bookingData.booking_date,
+        selectedTime,
+        salon.name,
+        service.name
+      );
+
+      Alert.alert(
+        '🎉 Success!',
+        'Booking created successfully!\n\n✅ You\'ll be notified when a barber accepts\n⏰ Reminder set for 1 hour before',
+        [
+          {
+            text: 'View Bookings',
+            onPress: () => navigation.navigate('Bookings' as never),
+          },
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
     } catch (error: any) {
       console.error('Booking error:', error.response?.data);
       Alert.alert('Error', 'Failed to create booking. Please try again.');
@@ -174,6 +187,14 @@ export default function BookAppointment() {
             />
           </View>
         </View>
+
+        {/* Notification Info */}
+        <View style={[styles.infoBox, { backgroundColor: '#2196F320' }]}>
+          <Ionicons name="notifications" size={20} color="#2196F3" />
+          <Text style={[styles.infoText, { color: '#2196F3' }]}>
+            You'll receive notifications when your booking is confirmed and 1 hour before the appointment
+          </Text>
+        </View>
       </ScrollView>
 
       {/* Book Button */}
@@ -213,6 +234,8 @@ const styles = StyleSheet.create({
   timeSlotText: { fontSize: 14, fontWeight: '600' },
   notesContainer: { borderRadius: 15, padding: 15 },
   notesInput: { fontSize: 15, minHeight: 100 },
+  infoBox: { marginHorizontal: 20, padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  infoText: { fontSize: 13, marginLeft: 10, flex: 1, lineHeight: 18 },
   footer: { paddingHorizontal: 20, paddingVertical: 20, borderTopWidth: 0 },
   totalContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   totalLabel: { fontSize: 16 },
