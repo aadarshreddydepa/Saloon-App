@@ -54,15 +54,25 @@ class Service(models.Model):
 
 # Barber Model
 class Barber(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    salon = models.ForeignKey(Salon, on_delete=models.CASCADE, related_name='barbers')
-    specialization = models.CharField(max_length=200)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='barber_profile')
+    salon = models.ForeignKey(Salon, on_delete=models.SET_NULL, null=True, blank=True, related_name='barbers')
+    specialization = models.CharField(max_length=200, blank=True)
     experience_years = models.IntegerField(default=0)
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
     is_available = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        # Ensure barber can only be assigned to one salon
+        if self.salon:
+            # Check if this barber is already assigned to another salon
+            existing = Barber.objects.filter(user=self.user).exclude(pk=self.pk).first()
+            if existing and existing.salon and existing.salon != self.salon:
+                raise ValueError("Barber can only be assigned to one salon at a time")
+        super().save(*args, **kwargs)
     
     def __str__(self):
-        return f"{self.user.username} - {self.salon.name}"
+        return f"{self.user.get_full_name() or self.user.username} - {self.salon.name if self.salon else 'No Salon'}"
 
 
 # Booking Model
@@ -134,3 +144,30 @@ class Review(models.Model):
     
     def __str__(self):
         return f"Review by {self.customer.username} for {self.salon.name}"
+
+class BarberJoinRequest(models.Model):
+    """Model for barbers requesting to join salons"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    barber = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='join_requests',
+        limit_choices_to={'user_type': 'barber'}
+    )
+    salon = models.ForeignKey(Salon, on_delete=models.CASCADE, related_name='join_requests')
+    message = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['barber', 'salon']
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.barber.username} -> {self.salon.name} ({self.status})"

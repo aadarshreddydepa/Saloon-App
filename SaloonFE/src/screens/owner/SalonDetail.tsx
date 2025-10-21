@@ -20,6 +20,7 @@ export default function SalonDetail() {
   const [salon, setSalon] = useState<any>(null);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
   const salonId = (route.params as any)?.id;
 
   const theme = isDark 
@@ -49,29 +50,65 @@ export default function SalonDetail() {
   };
 
   const handleToggleSalonStatus = async () => {
-    try {
-      await salonAPI.update(salonId, { ...salon, is_active: !salon.is_active });
-      setSalon({ ...salon, is_active: !salon.is_active });
-      Alert.alert('Success', `Salon ${salon.is_active ? 'deactivated' : 'activated'} successfully`);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update salon status');
-    }
+    const newStatus = !salon.is_active;
+    const action = newStatus ? 'activate' : 'deactivate';
+    
+    Alert.alert(
+      `${action.charAt(0).toUpperCase() + action.slice(1)} Salon`,
+      `Are you sure you want to ${action} "${salon.name}"?\n\n${
+        newStatus 
+          ? '✅ Salon will be visible to customers and accept bookings.' 
+          : '⚠️ Salon will be hidden from customers and won\'t accept new bookings.'
+      }`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: action.charAt(0).toUpperCase() + action.slice(1),
+          style: newStatus ? 'default' : 'destructive',
+          onPress: async () => {
+            setToggling(true);
+            try {
+              // ✅ Use updatePartial to send ONLY the is_active field
+              await salonAPI.updatePartial(salonId, { is_active: newStatus });
+              
+              // Update local state
+              setSalon({ ...salon, is_active: newStatus });
+              
+              Alert.alert(
+                'Success', 
+                `Salon ${newStatus ? 'activated' : 'deactivated'} successfully`,
+                [{ text: 'OK' }]
+              );
+            } catch (error: any) {
+              console.error('Toggle error:', error.response?.data);
+              Alert.alert(
+                'Error', 
+                error.response?.data?.detail || 'Failed to update salon status'
+              );
+            } finally {
+              setToggling(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleDeleteSalon = () => {
     Alert.alert(
-      'Delete Salon',
-      'Are you sure you want to delete this salon? This action cannot be undone.',
+      '🗑️ Delete Salon',
+      `Are you sure you want to permanently delete "${salon.name}"?\n\n⚠️ This will:\n• Remove all services\n• Cancel pending bookings\n• Remove barber assignments\n\nThis action CANNOT be undone!`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete Permanently',
           style: 'destructive',
           onPress: async () => {
             try {
               await salonAPI.delete(salonId);
-              Alert.alert('Success', 'Salon deleted successfully');
-              navigation.goBack();
+              Alert.alert('Deleted', 'Salon deleted successfully', [
+                { text: 'OK', onPress: () => navigation.goBack() }
+              ]);
             } catch (error) {
               Alert.alert('Error', 'Failed to delete salon');
             }
@@ -109,10 +146,26 @@ export default function SalonDetail() {
         <View style={[styles.infoCard, { backgroundColor: theme.card }]}>
           <View style={styles.infoHeader}>
             <Text style={[styles.salonName, { color: theme.text }]}>{salon.name}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: salon.is_active ? '#4CAF50' : '#F44336' }]}>
-              <Text style={styles.statusText}>{salon.is_active ? 'Active' : 'Inactive'}</Text>
+            <View style={[
+              styles.statusBadge, 
+              { backgroundColor: salon.is_active ? '#4CAF50' : '#F44336' }
+            ]}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>
+                {salon.is_active ? 'Active' : 'Inactive'}
+              </Text>
             </View>
           </View>
+
+          {/* Status Info */}
+          {!salon.is_active && (
+            <View style={styles.warningBanner}>
+              <Ionicons name="alert-circle" size={20} color="#FF9800" />
+              <Text style={styles.warningText}>
+                This salon is inactive and hidden from customers
+              </Text>
+            </View>
+          )}
 
           <View style={styles.infoRow}>
             <Ionicons name="location" size={20} color={theme.text} />
@@ -146,12 +199,23 @@ export default function SalonDetail() {
         {/* Quick Actions */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: salon.is_active ? '#FF9800' : '#4CAF50' }]}
+            style={[
+              styles.actionButton, 
+              { 
+                backgroundColor: salon.is_active ? '#FF9800' : '#4CAF50',
+                opacity: toggling ? 0.6 : 1 
+              }
+            ]}
             onPress={handleToggleSalonStatus}
+            disabled={toggling}
           >
-            <Ionicons name={salon.is_active ? 'pause-circle' : 'play-circle'} size={24} color="#FFF" />
+            <Ionicons 
+              name={salon.is_active ? 'pause-circle' : 'play-circle'} 
+              size={24} 
+              color="#FFF" 
+            />
             <Text style={styles.actionButtonText}>
-              {salon.is_active ? 'Deactivate' : 'Activate'}
+              {toggling ? 'Updating...' : (salon.is_active ? 'Deactivate' : 'Activate')}
             </Text>
           </TouchableOpacity>
 
@@ -215,8 +279,13 @@ export default function SalonDetail() {
                     <Ionicons name="time-outline" size={16} color={theme.text} />
                     <Text style={[styles.durationText, { color: theme.text }]}>{service.duration} mins</Text>
                   </View>
-                  <View style={[styles.serviceStatus, { backgroundColor: service.is_active ? '#4CAF50' : '#F44336' }]}>
-                    <Text style={styles.serviceStatusText}>{service.is_active ? 'Active' : 'Inactive'}</Text>
+                  <View style={[
+                    styles.serviceStatus, 
+                    { backgroundColor: service.is_active ? '#4CAF50' : '#F44336' }
+                  ]}>
+                    <Text style={styles.serviceStatusText}>
+                      {service.is_active ? 'Active' : 'Inactive'}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -235,10 +304,13 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
   headerTitle: { fontSize: 20, fontWeight: 'bold' },
   infoCard: { margin: 20, padding: 20, borderRadius: 20 },
-  infoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  infoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   salonName: { fontSize: 24, fontWeight: 'bold', flex: 1 },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFF', marginRight: 6 },
   statusText: { color: '#FFF', fontSize: 12, fontWeight: '600' },
+  warningBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF980020', padding: 12, borderRadius: 10, marginBottom: 15 },
+  warningText: { color: '#FF9800', fontSize: 13, marginLeft: 8, flex: 1, fontWeight: '600' },
   infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   infoText: { fontSize: 16, marginLeft: 12, flex: 1 },
   description: { fontSize: 14, marginTop: 12, lineHeight: 20 },

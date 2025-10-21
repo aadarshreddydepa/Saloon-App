@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Salon, Service, Barber, Booking, Payment, Review
+from .models import BarberJoinRequest, User, Salon, Service, Barber, Booking, Payment, Review
 
 
 @admin.register(User)
@@ -60,3 +60,9 @@ class ReviewAdmin(admin.ModelAdmin):
     list_filter = ['rating', 'created_at']
     search_fields = ['customer__username', 'salon__name', 'comment']
     readonly_fields = ['created_at']
+@admin.register(BarberJoinRequest)
+class BarberJoinRequestAdmin(admin.ModelAdmin):
+    list_display = ['barber', 'salon', 'status', 'created_at']
+    list_filter = ['status', 'created_at']
+    search_fields = ['barber__username', 'salon__name']
+    readonly_fields = ['created_at', 'updated_at']

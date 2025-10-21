@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   useColorScheme,
   RefreshControl,
-  Alert,
-  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -19,8 +17,7 @@ export default function OwnerBookings() {
   const isDark = useColorScheme() === 'dark';
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedBooking, setSelectedBooking] = useState<any>(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'unassigned' | 'today'>('all');
 
   const theme = isDark 
     ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0' }
@@ -41,15 +38,22 @@ export default function OwnerBookings() {
     }
   };
 
-  const updateBookingStatus = async (bookingId: number, status: string) => {
-    try {
-      await bookingAPI.update(bookingId, { status });
-      setModalVisible(false);
-      fetchBookings();
-      Alert.alert('Success', `Booking ${status} successfully`);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update booking status');
+  const getFilteredBookings = () => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (filter === 'unassigned') {
+      return bookings.filter((b: any) => !b.barber && b.status !== 'cancelled');
+    } else if (filter === 'today') {
+      return bookings.filter((b: any) => b.booking_date === today);
     }
+    return bookings;
+  };
+
+  const filteredBookings = getFilteredBookings();
+  const stats = {
+    total: bookings.length,
+    unassigned: bookings.filter((b: any) => !b.barber && b.status === 'pending').length,
+    today: bookings.filter((b: any) => b.booking_date === new Date().toISOString().split('T')[0]).length,
   };
 
   const getStatusColor = (status: string) => {
@@ -63,21 +67,8 @@ export default function OwnerBookings() {
     return colors[status] || '#808080';
   };
 
-  const statusOptions = [
-    { value: 'confirmed', label: 'Confirm', icon: 'checkmark-circle', color: '#2196F3' },
-    { value: 'in_progress', label: 'In Progress', icon: 'time', color: '#9C27B0' },
-    { value: 'completed', label: 'Complete', icon: 'checkmark-done', color: '#4CAF50' },
-    { value: 'cancelled', label: 'Cancel', icon: 'close-circle', color: '#F44336' },
-  ];
-
   const renderBooking = ({ item }: any) => (
-    <TouchableOpacity
-      style={[styles.bookingCard, { backgroundColor: theme.card }]}
-      onPress={() => {
-        setSelectedBooking(item);
-        setModalVisible(true);
-      }}
-    >
+    <View style={[styles.bookingCard, { backgroundColor: theme.card }]}>
       <View style={styles.bookingHeader}>
         <View>
           <Text style={[styles.bookingId, { color: theme.text }]}>#{item.id}</Text>
@@ -108,27 +99,60 @@ export default function OwnerBookings() {
         </View>
       </View>
 
-      {item.notes && (
-        <Text style={[styles.notes, { color: theme.text, opacity: 0.5 }]}>
-          Note: {item.notes}
-        </Text>
+      {item.barber_name ? (
+        <View style={styles.barberInfo}>
+          <Ionicons name="person" size={16} color="#4CAF50" />
+          <Text style={[styles.barberName, { color: '#4CAF50' }]}>
+            Assigned to: {item.barber_name}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.barberInfo}>
+          <Ionicons name="alert-circle" size={16} color="#FF9800" />
+          <Text style={[styles.unassignedText, { color: '#FF9800' }]}>
+            Waiting for barber assignment
+          </Text>
+        </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <View style={[styles.header, { backgroundColor: theme.card }]}>
         <Text style={[styles.headerTitle, { color: theme.text }]}>All Bookings</Text>
-        <View style={styles.statsContainer}>
-          <Text style={[styles.statsText, { color: theme.text }]}>
-            {bookings.filter((b: any) => b.status === 'pending').length} Pending
-          </Text>
-        </View>
+        <Text style={[styles.headerSubtitle, { color: theme.text, opacity: 0.6 }]}>
+          View-only for monitoring
+        </Text>
+      </View>
+
+      {/* Stats */}
+      <View style={[styles.statsContainer, { backgroundColor: theme.card }]}>
+        <TouchableOpacity 
+          style={[styles.statItem, filter === 'all' && { backgroundColor: theme.primary + '20' }]}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={[styles.statValue, { color: theme.text }]}>{stats.total}</Text>
+          <Text style={[styles.statLabel, { color: theme.text }]}>Total</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.statItem, filter === 'unassigned' && { backgroundColor: '#FF980020' }]}
+          onPress={() => setFilter('unassigned')}
+        >
+          <Text style={[styles.statValue, { color: '#FF9800' }]}>{stats.unassigned}</Text>
+          <Text style={[styles.statLabel, { color: theme.text }]}>Unassigned</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.statItem, filter === 'today' && { backgroundColor: '#2196F320' }]}
+          onPress={() => setFilter('today')}
+        >
+          <Text style={[styles.statValue, { color: '#2196F3' }]}>{stats.today}</Text>
+          <Text style={[styles.statLabel, { color: theme.text }]}>Today</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
-        data={bookings}
+        data={filteredBookings}
         renderItem={renderBooking}
         keyExtractor={(item: any) => item.id.toString()}
         contentContainerStyle={styles.list}
@@ -136,72 +160,10 @@ export default function OwnerBookings() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="calendar-outline" size={80} color={theme.text + '50'} />
-            <Text style={[styles.emptyText, { color: theme.text }]}>No bookings yet</Text>
+            <Text style={[styles.emptyText, { color: theme.text }]}>No bookings found</Text>
           </View>
         }
       />
-
-      {/* Status Update Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Update Booking Status</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={28} color={theme.text} />
-              </TouchableOpacity>
-            </View>
-
-            {selectedBooking && (
-              <View style={styles.modalBody}>
-                <View style={styles.bookingInfo}>
-                  <Text style={[styles.infoLabel, { color: theme.text, opacity: 0.6 }]}>
-                    Customer
-                  </Text>
-                  <Text style={[styles.infoValue, { color: theme.text }]}>
-                    {selectedBooking.customer_name}
-                  </Text>
-                </View>
-
-                <View style={styles.bookingInfo}>
-                  <Text style={[styles.infoLabel, { color: theme.text, opacity: 0.6 }]}>
-                    Service
-                  </Text>
-                  <Text style={[styles.infoValue, { color: theme.text }]}>
-                    {selectedBooking.service_name}
-                  </Text>
-                </View>
-
-                <View style={styles.bookingInfo}>
-                  <Text style={[styles.infoLabel, { color: theme.text, opacity: 0.6 }]}>
-                    Current Status
-                  </Text>
-                  <View style={[styles.currentStatus, { backgroundColor: getStatusColor(selectedBooking.status) + '20' }]}>
-                    <Text style={[styles.currentStatusText, { color: getStatusColor(selectedBooking.status) }]}>
-                      {selectedBooking.status}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Change Status To:</Text>
-
-                {statusOptions.map((option) => (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[styles.statusOption, { backgroundColor: option.color + '20' }]}
-                    onPress={() => updateBookingStatus(selectedBooking.id, option.value)}
-                  >
-                    <Ionicons name={option.icon as any} size={24} color={option.color} />
-                    <Text style={[styles.statusOptionText, { color: option.color }]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -209,10 +171,13 @@ export default function OwnerBookings() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
-  headerTitle: { fontSize: 28, fontWeight: 'bold', marginBottom: 8 },
-  statsContainer: { flexDirection: 'row' },
-  statsText: { fontSize: 14, opacity: 0.7 },
-  list: { padding: 20 },
+  headerTitle: { fontSize: 28, fontWeight: 'bold', marginBottom: 4 },
+  headerSubtitle: { fontSize: 14 },
+  statsContainer: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 20, borderRadius: 15, padding: 10 },
+  statItem: { flex: 1, alignItems: 'center', padding: 12, borderRadius: 10, marginHorizontal: 5 },
+  statValue: { fontSize: 24, fontWeight: 'bold', marginBottom: 4 },
+  statLabel: { fontSize: 12 },
+  list: { paddingHorizontal: 20, paddingBottom: 20 },
   bookingCard: { padding: 20, borderRadius: 20, marginBottom: 15 },
   bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   bookingId: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
@@ -221,23 +186,12 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
   serviceName: { fontSize: 14, marginBottom: 4 },
   salonName: { fontSize: 14, marginBottom: 12 },
-  bookingFooter: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  bookingFooter: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   dateTime: { flexDirection: 'row', alignItems: 'center' },
   dateText: { fontSize: 14, marginLeft: 6 },
-  notes: { fontSize: 12, fontStyle: 'italic', marginTop: 8 },
+  barberInfo: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(128,128,128,0.2)' },
+  barberName: { fontSize: 13, fontWeight: '600', marginLeft: 6 },
+  unassignedText: { fontSize: 13, fontWeight: '600', marginLeft: 6 },
   emptyContainer: { alignItems: 'center', marginTop: 100 },
   emptyText: { fontSize: 20, fontWeight: 'bold', marginTop: 20 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '80%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 22, fontWeight: 'bold' },
-  modalBody: {},
-  bookingInfo: { marginBottom: 15 },
-  infoLabel: { fontSize: 14, marginBottom: 4 },
-  infoValue: { fontSize: 16, fontWeight: '600' },
-  currentStatus: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, alignSelf: 'flex-start' },
-  currentStatusText: { fontSize: 14, fontWeight: '600', textTransform: 'capitalize' },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 20, marginBottom: 15 },
-  statusOption: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 15, marginBottom: 10 },
-  statusOptionText: { fontSize: 16, fontWeight: '600', marginLeft: 12 },
 });

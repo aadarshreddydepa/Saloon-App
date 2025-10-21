@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Salon, Service, Barber, Booking, Payment, Review
+from .models import BarberJoinRequest, Salon, Service, Barber, Booking, Payment, Review
 
 User = get_user_model()
 
@@ -93,22 +93,25 @@ class SalonCreateUpdateSerializer(serializers.ModelSerializer):
 
 # Booking Serializers
 class BookingSerializer(serializers.ModelSerializer):
-    customer_name = serializers.CharField(source='customer.username', read_only=True)
+    customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
     salon_name = serializers.CharField(source='salon.name', read_only=True)
-    barber_name = serializers.CharField(source='barber.user.username', read_only=True)
     service_name = serializers.CharField(source='service.name', read_only=True)
-    service_price = serializers.DecimalField(source='service.price', max_digits=10, 
-                                             decimal_places=2, read_only=True)
+    service_price = serializers.DecimalField(source='service.price', max_digits=10, decimal_places=2, read_only=True)
+    barber_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Booking
-        fields = ['id', 'customer', 'customer_name', 'salon', 'salon_name', 
-                  'barber', 'barber_name', 'service', 'service_name', 'service_price',
-                  'booking_date', 'booking_time', 'status', 'queue_position', 
-                  'estimated_wait_time', 'notes', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'queue_position', 
-                            'estimated_wait_time']
-
+        fields = [
+            'id', 'customer', 'customer_name', 'salon', 'salon_name', 
+            'service', 'service_name', 'service_price', 'barber', 'barber_name',
+            'booking_date', 'booking_time', 'status', 'notes', 'created_at'
+        ]
+        read_only_fields = ['created_at']
+    
+    def get_barber_name(self, obj):
+        if obj.barber:
+            return obj.barber.user.get_full_name() or obj.barber.user.username
+        return None
 
 class BookingCreateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -188,3 +191,36 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
         if value < 1 or value > 5:
             raise serializers.ValidationError("Rating must be between 1 and 5.")
         return value
+class BarberJoinRequestSerializer(serializers.ModelSerializer):
+    barber_name = serializers.CharField(source='barber.get_full_name', read_only=True)
+    barber_username = serializers.CharField(source='barber.username', read_only=True)
+    salon_name = serializers.CharField(source='salon.name', read_only=True)
+    
+    class Meta:
+        model = BarberJoinRequest
+        fields = ['id', 'barber', 'barber_name', 'barber_username', 'salon', 'salon_name', 'message', 'status', 'created_at', 'updated_at']
+        read_only_fields = ['status', 'created_at', 'updated_at']
+
+class BarberDetailSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    salon_name = serializers.CharField(source='salon.name', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    
+    class Meta:
+        model = Barber
+        fields = ['id', 'user', 'user_id', 'user_name', 'user_username', 'salon', 'salon_name', 'specialization', 'experience_years', 'rating', 'is_available', 'created_at']
+        read_only_fields = ['rating', 'created_at']
+class SalonSerializer(serializers.ModelSerializer):
+    owner_name = serializers.CharField(source='owner.get_full_name', read_only=True)
+    
+    class Meta:
+        model = Salon
+        fields = [
+            'id', 'owner', 'owner_name', 'name', 'description', 
+            'address', 'latitude', 'longitude', 'phone',
+            'opening_time', 'closing_time', 'rating', 
+            'total_reviews', 'is_active', 'created_at'
+        ]
+        read_only_fields = ['rating', 'total_reviews', 'created_at', 'owner_name']
+        # ✅ This allows partial updates - only provided fields are validated
