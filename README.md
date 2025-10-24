@@ -95,40 +95,40 @@ salon-booking-app/
 
 ### Backend Setup
 
-Clone the repository
-git clone https://github.com/yourusername/salon-booking-app.git
-cd salon-booking-app/backend
+- Clone the repository
+- git clone https://github.com/aadarshreddydepa/Saloon-App.git
+- cd salon-booking-app/backend
 
-Create virtual environment
-python -m venv venv
-source venv/bin/activate # On Windows: venv\Scripts\activate
+- Create virtual environment
+- python -m venv venv
+- source venv/bin/activate # On Windows: venv\Scripts\activate
 
-Install dependencies
-pip install -r requirements.txt
+- Install dependencies
+- pip install -r requirements.txt
+ 
+- Run migrations
+- python manage.py migrate
 
-Run migrations
-python manage.py migrate
+- Create superuser
+- python manage.py createsuperuser
 
-Create superuser
-python manage.py createsuperuser
-
-Start development server
-python manage.py runserver 0.0.0.0:8000
+- Start development server
+- python manage.py runserver 0.0.0.0:8000
 
 ### Frontend Setup
 
-Navigate to frontend directory
-cd frontend
+- Navigate to frontend directory
+- cd frontend
 
-Install dependencies
-npm install
+- Install dependencies
+- npm install
 
-Update API base URL in src/services/api.ts
-Change BASE_URL to your local IP
-Start Expo development server
-npx expo start
+- Update API base URL in src/services/api.ts
+- Change BASE_URL to your local IP
+- Start Expo development server
+- npx expo start
 
-Press 'a' for Android or 'i' for iOS
+- Press 'a' for Android or 'i' for iOS
 
 
 ## 🗄️ Database Models
