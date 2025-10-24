@@ -11,11 +11,13 @@ import {
   TextInput,
   Modal,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { authAPI } from '../services/api';
+import imageService from '../services/imageService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProfileScreen() {
@@ -25,11 +27,13 @@ export default function ProfileScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [editData, setEditData] = useState({
     first_name: user?.first_name || '',
     last_name: user?.last_name || '',
     email: user?.email || '',
     phone: user?.phone || '',
+    profile_picture: user?.profile_picture || '',
   });
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -40,6 +44,18 @@ export default function ProfileScreen() {
   const theme = isDark 
     ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', border: '#333333', inputBg: '#0D0D0D' }
     : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', border: '#E0E0E0', inputBg: '#FAFAFA' };
+
+  useEffect(() => {
+    if (user) {
+      setEditData({
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        profile_picture: user.profile_picture || '',
+      });
+    }
+  }, [user]);
 
   const handleLogout = () => {
     Alert.alert(
@@ -59,6 +75,29 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleUploadProfilePicture = async () => {
+    setUploadingPhoto(true);
+    try {
+      const uris = await imageService.showImagePickerOptions(false);
+      if (uris && uris.length > 0) {
+        const url = await imageService.uploadToCloudinary(uris[0], 'profiles');
+        if (url) {
+          setEditData({ ...editData, profile_picture: url });
+          
+          // Update immediately in backend
+          const response = await authAPI.updateProfile({ profile_picture: url });
+          setUser(response.data);
+          
+          Alert.alert('Success', 'Profile picture updated!');
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to upload profile picture');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   const handleUpdateProfile = async () => {
     try {
       const response = await authAPI.updateProfile(editData);
@@ -75,8 +114,8 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-    if (passwordData.newPassword.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters');
+    if (passwordData.newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
     
@@ -190,13 +229,29 @@ export default function ProfileScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Profile Header */}
         <View style={[styles.profileHeader, { backgroundColor: theme.card }]}>
-          <View style={[styles.avatarContainer, { backgroundColor: theme.inputBg }]}>
-            {user?.profile_picture ? (
-              <Image source={{ uri: user.profile_picture }} style={styles.avatar} />
+          <TouchableOpacity 
+            style={[styles.avatarContainer, { backgroundColor: theme.inputBg }]}
+            onPress={handleUploadProfilePicture}
+            disabled={uploadingPhoto}
+          >
+            {uploadingPhoto ? (
+              <ActivityIndicator size="large" color={theme.primary} />
+            ) : editData.profile_picture ? (
+              <>
+                <Image source={{ uri: editData.profile_picture }} style={styles.avatar} />
+                <View style={styles.cameraIconOverlay}>
+                  <Ionicons name="camera" size={20} color="#FFF" />
+                </View>
+              </>
             ) : (
-              <Ionicons name={getUserTypeIcon()} size={50} color={theme.text} />
+              <>
+                <Ionicons name={getUserTypeIcon()} size={50} color={theme.text} />
+                <View style={styles.cameraIconOverlay}>
+                  <Ionicons name="camera" size={20} color="#FFF" />
+                </View>
+              </>
             )}
-          </View>
+          </TouchableOpacity>
           <Text style={[styles.name, { color: theme.text }]}>
             {user?.first_name || user?.username} {user?.last_name || ''}
           </Text>
@@ -205,27 +260,6 @@ export default function ProfileScreen() {
             <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
           </View>
         </View>
-
-        {/* Stats for Owner */}
-        {user?.user_type === 'owner' && (
-          <View style={[styles.statsContainer, { backgroundColor: theme.card }]}>
-            <View style={styles.statItem}>
-              <Ionicons name="storefront" size={24} color="#4CAF50" />
-              <Text style={[styles.statValue, { color: theme.text }]}>0</Text>
-              <Text style={[styles.statLabel, { color: theme.text, opacity: 0.6 }]}>Salons</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="calendar" size={24} color="#2196F3" />
-              <Text style={[styles.statValue, { color: theme.text }]}>0</Text>
-              <Text style={[styles.statLabel, { color: theme.text, opacity: 0.6 }]}>Bookings</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="cash" size={24} color="#9C27B0" />
-              <Text style={[styles.statValue, { color: theme.text }]}>₹0</Text>
-              <Text style={[styles.statLabel, { color: theme.text, opacity: 0.6 }]}>Revenue</Text>
-            </View>
-          </View>
-        )}
 
         {/* Account Settings */}
         <MenuSection title="Account" items={accountItems} />
@@ -255,6 +289,31 @@ export default function ProfileScreen() {
             </View>
 
             <ScrollView>
+              {/* Profile Picture Section */}
+              <TouchableOpacity 
+                style={styles.modalAvatarContainer}
+                onPress={handleUploadProfilePicture}
+                disabled={uploadingPhoto}
+              >
+                {uploadingPhoto ? (
+                  <ActivityIndicator size="large" color={theme.primary} />
+                ) : editData.profile_picture ? (
+                  <>
+                    <Image source={{ uri: editData.profile_picture }} style={styles.modalAvatar} />
+                    <View style={styles.modalCameraIcon}>
+                      <Ionicons name="camera" size={16} color="#FFF" />
+                    </View>
+                  </>
+                ) : (
+                  <View style={[styles.modalAvatar, { backgroundColor: theme.inputBg }]}>
+                    <Ionicons name="person" size={40} color={theme.text} />
+                    <View style={styles.modalCameraIcon}>
+                      <Ionicons name="camera" size={16} color="#FFF" />
+                    </View>
+                  </View>
+                )}
+              </TouchableOpacity>
+
               <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
                 <Ionicons name="person-outline" size={20} color={theme.text} style={styles.inputIcon} />
                 <TextInput
@@ -384,16 +443,13 @@ const styles = StyleSheet.create({
   header: { paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
   headerTitle: { fontSize: 28, fontWeight: 'bold' },
   profileHeader: { padding: 30, alignItems: 'center', marginBottom: 20 },
-  avatarContainer: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  avatarContainer: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center', marginBottom: 15, position: 'relative' },
   avatar: { width: 100, height: 100, borderRadius: 50 },
+  cameraIconOverlay: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#4CAF50', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF' },
   name: { fontSize: 24, fontWeight: 'bold', marginBottom: 4 },
   email: { fontSize: 16, marginBottom: 12 },
   badge: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
   badgeText: { fontSize: 14, fontWeight: '600' },
-  statsContainer: { flexDirection: 'row', justifyContent: 'space-around', padding: 20, marginHorizontal: 20, borderRadius: 20, marginBottom: 20 },
-  statItem: { alignItems: 'center' },
-  statValue: { fontSize: 20, fontWeight: 'bold', marginTop: 8 },
-  statLabel: { fontSize: 12, marginTop: 4 },
   menuSection: { paddingHorizontal: 20, marginBottom: 20 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   menuItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 15, marginBottom: 10 },
@@ -405,6 +461,9 @@ const styles = StyleSheet.create({
   modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 24, fontWeight: 'bold' },
+  modalAvatarContainer: { alignSelf: 'center', marginBottom: 20 },
+  modalAvatar: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
+  modalCameraIcon: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#4CAF50', width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
   inputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginBottom: 15, height: 55 },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16 },

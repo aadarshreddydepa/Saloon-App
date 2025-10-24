@@ -1,10 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 import notificationService from './src/services/notificationService';
 import * as Notifications from 'expo-notifications';
-import { useNavigation } from '@react-navigation/native';
 
 export default function App() {
   const colorScheme = useColorScheme();
@@ -12,24 +11,30 @@ export default function App() {
   const responseListener = useRef<any>();
 
   useEffect(() => {
-    // Register for push notifications
+    // Register for push notifications (will gracefully fail in Expo Go)
     registerNotifications();
 
-    // Add notification listeners
+    // Add notification listeners (works for local notifications in Expo Go)
     notificationListener.current = notificationService.addNotificationReceivedListener(
       (notification) => {
-        console.log('📩 Notification received:', notification);
-        // Handle notification received while app is open
+        console.log('📩 Notification received:', notification.request.content.title);
       }
     );
 
     responseListener.current = notificationService.addNotificationResponseListener(
       (response) => {
-        console.log('👆 Notification tapped:', response);
+        console.log('👆 Notification tapped:', response.notification.request.content.title);
         // Handle notification tap - navigate to relevant screen
-        handleNotificationTap(response);
       }
     );
+
+    // Show info if running in Expo Go
+    if (notificationService.isRunningInExpoGo()) {
+      console.log('📱 Running in Expo Go - Local notifications only');
+      console.log('💡 To test push notifications, build a development build:');
+      console.log('   npx expo install expo-dev-client');
+      console.log('   npx expo run:android or npx expo run:ios');
+    }
 
     // Cleanup
     return () => {
@@ -45,17 +50,10 @@ export default function App() {
   const registerNotifications = async () => {
     const token = await notificationService.registerForPushNotifications();
     if (token) {
-      console.log('✅ App registered for notifications');
-      // TODO: Send token to backend to store in user profile
+      console.log('✅ App registered for push notifications');
+    } else {
+      console.log('ℹ️ Using local notifications only');
     }
-  };
-
-  const handleNotificationTap = (response: Notifications.NotificationResponse) => {
-    const data = response.notification.request.content.data;
-    
-    // Navigate based on notification type
-    // This will be implemented with navigation reference
-    console.log('Navigation would happen here based on:', data);
   };
 
   return (

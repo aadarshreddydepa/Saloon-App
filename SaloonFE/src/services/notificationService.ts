@@ -15,12 +15,20 @@ Notifications.setNotificationHandler({
 
 class NotificationService {
   private expoPushToken: string | null = null;
+  private isExpoGo: boolean = Constants.appOwnership === 'expo';
 
   /**
    * Register for push notifications and get token
    */
   async registerForPushNotifications(): Promise<string | null> {
     try {
+      // Skip if running in Expo Go (SDK 53+)
+      if (this.isExpoGo) {
+        console.log('⚠️ Push notifications are not supported in Expo Go (SDK 53+)');
+        console.log('💡 Use local notifications instead, or build a development build');
+        return null;
+      }
+
       // Check if running on physical device
       if (!Device.isDevice) {
         console.log('⚠️ Push notifications only work on physical devices');
@@ -44,8 +52,16 @@ class NotificationService {
       }
 
       // Get Expo push token
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
+                       Constants.easConfig?.projectId;
+
+      if (!projectId) {
+        console.log('⚠️ No project ID found. Push notifications disabled.');
+        return null;
+      }
+
       const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: Constants.expoConfig?.extra?.eas?.projectId,
+        projectId,
       });
 
       this.expoPushToken = tokenData.data;
@@ -84,7 +100,7 @@ class NotificationService {
   }
 
   /**
-   * Schedule a local notification
+   * Schedule a local notification (works in Expo Go)
    */
   async scheduleLocalNotification(
     title: string,
@@ -92,18 +108,31 @@ class NotificationService {
     data?: any,
     trigger?: Notifications.NotificationTriggerInput
   ): Promise<string> {
-    const identifier = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data,
-        sound: true,
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-      },
-      trigger: trigger || null, // null = immediate
-    });
+    try {
+      // Request permission for local notifications
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('⚠️ Notification permission not granted');
+        return '';
+      }
 
-    return identifier;
+      const identifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data,
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger: trigger || null, // null = immediate
+      });
+
+      console.log('✅ Local notification scheduled:', identifier);
+      return identifier;
+    } catch (error) {
+      console.error('❌ Error scheduling local notification:', error);
+      return '';
+    }
   }
 
   /**
@@ -143,7 +172,7 @@ class NotificationService {
   }
 
   /**
-   * Send immediate notification
+   * Send immediate notification (works in Expo Go)
    */
   async sendLocalNotification(title: string, body: string, data?: any): Promise<void> {
     await this.scheduleLocalNotification(title, body, data);
@@ -179,6 +208,13 @@ class NotificationService {
    */
   removeNotificationSubscription(subscription: Notifications.Subscription): void {
     Notifications.removeNotificationSubscription(subscription);
+  }
+
+  /**
+   * Check if running in Expo Go
+   */
+  isRunningInExpoGo(): boolean {
+    return this.isExpoGo;
   }
 }
 

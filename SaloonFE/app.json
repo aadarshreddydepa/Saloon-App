@@ -28,21 +28,22 @@
       },
       "package": "com.yourdomain.salonbooking",
       "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
         "NOTIFICATIONS",
         "VIBRATE"
-      ],
-      "googleServicesFile": "./google-services.json"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       [
-        "expo-notifications",
+        "expo-image-picker",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#000000",
-          "sounds": ["./assets/notification-sound.wav"]
+          "photosPermission": "The app accesses your photos to let you upload salon images.",
+          "cameraPermission": "The app accesses your camera to let you take photos."
         }
       ]
     ]

@@ -9,10 +9,12 @@ import {
   Alert,
   RefreshControl,
   Dimensions,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { salonAPI, serviceAPI, reviewAPI } from '../../services/api';
+import ImageGallery from '../../components/ImageGallery';
 
 const { width } = Dimensions.get('window');
 
@@ -85,10 +87,14 @@ export default function CustomerSalonDetail() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchSalonDetails} />}
       >
-        {/* Salon Image Banner */}
-        <View style={[styles.banner, { backgroundColor: theme.inputBg }]}>
-          <Ionicons name="storefront" size={80} color={theme.primary} />
-        </View>
+        {/* Cover Image */}
+        {salon.cover_image ? (
+          <Image source={{ uri: salon.cover_image }} style={styles.coverImage} />
+        ) : (
+          <View style={[styles.banner, { backgroundColor: theme.inputBg }]}>
+            <Ionicons name="storefront" size={80} color={theme.primary} />
+          </View>
+        )}
 
         {/* Salon Info */}
         <View style={[styles.infoCard, { backgroundColor: theme.card }]}>
@@ -133,6 +139,16 @@ export default function CustomerSalonDetail() {
           )}
         </View>
 
+        {/* Gallery */}
+        {salon.gallery_images && salon.gallery_images.length > 0 && (
+          <View style={[styles.gallerySection, { backgroundColor: theme.card }]}>
+            <Text style={[styles.galleryTitle, { color: theme.text }]}>
+              Gallery ({salon.gallery_images.length})
+            </Text>
+            <ImageGallery images={salon.gallery_images} />
+          </View>
+        )}
+
         {/* Tabs */}
         <View style={[styles.tabsContainer, { backgroundColor: theme.card }]}>
           <TouchableOpacity
@@ -173,6 +189,9 @@ export default function CustomerSalonDetail() {
               services.map((service: any) => (
                 <View key={service.id} style={[styles.serviceCard, { backgroundColor: theme.card }]}>
                   <View style={styles.serviceHeader}>
+                    {service.image && (
+                      <Image source={{ uri: service.image }} style={styles.serviceImage} />
+                    )}
                     <View style={styles.serviceInfo}>
                       <Text style={[styles.serviceName, { color: theme.text }]}>{service.name}</Text>
                       {service.description && (
@@ -259,6 +278,7 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
   headerTitle: { fontSize: 20, fontWeight: 'bold', flex: 1, marginHorizontal: 15 },
+  coverImage: { width: width, height: 250 },
   banner: { height: 200, justifyContent: 'center', alignItems: 'center' },
   infoCard: { margin: 20, padding: 20, borderRadius: 20 },
   titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
@@ -271,13 +291,16 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   infoText: { fontSize: 15, marginLeft: 10, flex: 1 },
   description: { fontSize: 14, marginTop: 10, lineHeight: 20 },
+  gallerySection: { marginHorizontal: 20, marginBottom: 20, padding: 20, borderRadius: 20 },
+  galleryTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
   tabsContainer: { flexDirection: 'row', marginHorizontal: 20, borderRadius: 15, padding: 5, marginBottom: 20 },
   tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
   activeTab: {},
   tabText: { fontSize: 15 },
   servicesSection: { paddingHorizontal: 20, paddingBottom: 20 },
   serviceCard: { borderRadius: 15, padding: 15, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  serviceHeader: { flex: 1 },
+  serviceHeader: { flex: 1, flexDirection: 'row' },
+  serviceImage: { width: 60, height: 60, borderRadius: 10, marginRight: 12 },
   serviceInfo: { flex: 1 },
   serviceName: { fontSize: 17, fontWeight: 'bold', marginBottom: 4 },
   serviceDescription: { fontSize: 13, marginBottom: 8 },

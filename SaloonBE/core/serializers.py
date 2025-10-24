@@ -33,11 +33,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 # Service Serializer
 class ServiceSerializer(serializers.ModelSerializer):
+    salon_name = serializers.CharField(source='salon.name', read_only=True)
+    
     class Meta:
         model = Service
-        fields = ['id', 'salon', 'name', 'description', 'price', 'duration', 'is_active']
-        read_only_fields = ['id']
-
+        fields = [
+            'id', 'salon', 'salon_name', 'name', 'description',
+            'price', 'duration', 'is_active', 'created_at',
+            'image' ,'created_at','updated_at'# NEW field
+        ]
+        read_only_fields = ['created_at', 'salon_name','updated_at']
 
 # Barber Serializer
 class BarberSerializer(serializers.ModelSerializer):
@@ -220,7 +225,44 @@ class SalonSerializer(serializers.ModelSerializer):
             'id', 'owner', 'owner_name', 'name', 'description', 
             'address', 'latitude', 'longitude', 'phone',
             'opening_time', 'closing_time', 'rating', 
-            'total_reviews', 'is_active', 'created_at'
+            'total_reviews', 'is_active', 'created_at',
+            'cover_image', 'gallery_images'  # NEW fields
         ]
         read_only_fields = ['rating', 'total_reviews', 'created_at', 'owner_name']
-        # ✅ This allows partial updates - only provided fields are validated
+
+# Update existing serializers to include image fields
+
+class SalonSerializer(serializers.ModelSerializer):
+    owner_name = serializers.CharField(source='owner.get_full_name', read_only=True)
+    
+    class Meta:
+        model = Salon
+        fields = [
+            'id', 'owner', 'owner_name', 'name', 'description', 
+            'address', 'latitude', 'longitude', 'phone',
+            'opening_time', 'closing_time', 'rating', 
+            'total_reviews', 'is_active', 'created_at',
+            'cover_image', 'gallery_images'  # NEW fields
+        ]
+        read_only_fields = ['rating', 'total_reviews', 'created_at', 'owner_name']
+
+class ServiceSerializer(serializers.ModelSerializer):
+    salon_name = serializers.CharField(source='salon.name', read_only=True)
+    
+    class Meta:
+        model = Service
+        fields = [
+            'id', 'salon', 'salon_name', 'name', 'description',
+            'price', 'duration', 'is_active', 'created_at',
+            'image'  # NEW field
+        ]
+        read_only_fields = ['created_at', 'salon_name']
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'phone', 'user_type', 'profile_picture'  # NEW field
+        ]
+        read_only_fields = ['id', 'username', 'user_type']
