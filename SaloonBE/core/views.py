@@ -5,31 +5,43 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
 from math import radians, cos, sin, asin, sqrt
+from datetime import datetime, timedelta
+from django.db.models import Sum
 
 from .models import BarberJoinRequest, Salon, Service, Barber, Booking, Payment, Review
 from .serializers import (
-    UserSerializer, UserProfileSerializer,
+    RegisterSerializer, UserSerializer, UserProfileSerializer,
     SalonSerializer, SalonListSerializer, SalonCreateUpdateSerializer,
-    ServiceSerializer, BarberSerializer, BarberListSerializer,
+    ServiceSerializer, BarberSerializer, BarberListSerializer, BarberDetailSerializer,
     BookingSerializer, BookingCreateSerializer, BookingUpdateSerializer,
     PaymentSerializer, PaymentCreateSerializer,
-    ReviewSerializer, ReviewCreateSerializer,BarberSerializer, BarberDetailSerializer, BarberJoinRequestSerializer
+    ReviewSerializer, ReviewCreateSerializer, BarberJoinRequestSerializer
 )
 
 User = get_user_model()
 
 
-# User Registration and Profile
+# ============ USER ENDPOINTS ============
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_user(request):
     """Register a new user"""
-    serializer = UserSerializer(data=request.data)
+    serializer = RegisterSerializer(data=request.data)
+    
     if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        user = serializer.save()
+        return Response({
+            'message': 'User registered successfully',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'user_type': user.user_type,
+            }
+        }, status=status.HTTP_201_CREATED)
+    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -49,13 +61,22 @@ def user_profile(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# Salon ViewSet
+# ============ SALON VIEWSET ============
+
 class SalonViewSet(viewsets.ModelViewSet):
-    queryset = Salon.objects.filter(is_active=True)
+    queryset = Salon.objects.all()
+    serializer_class = SalonSerializer
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active']
     search_fields = ['name', 'address', 'description']
     ordering_fields = ['rating', 'created_at']
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.user_type == 'owner':
+            return Salon.objects.filter(owner=user)
+        return Salon.objects.filter(is_active=True)
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -64,20 +85,44 @@ class SalonViewSet(viewsets.ModelViewSet):
             return SalonCreateUpdateSerializer
         return SalonSerializer
     
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated()]
-        return [AllowAny()]
-    
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+    
+    def partial_update(self, request, *args, **kwargs):
+        """Allow PATCH updates for salon"""
+        instance = self.get_object()
+        
+        if instance.owner != request.user:
+            return Response(
+                {'error': 'You can only update your own salons'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        return Response(serializer.data)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete salon - only by owner"""
+        instance = self.get_object()
+        
+        if instance.owner != request.user:
+            return Response(
+                {'error': 'You can only delete your own salons'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=False, methods=['get'])
     def nearby(self, request):
         """Get salons near a specific location"""
         lat = request.query_params.get('latitude')
         lng = request.query_params.get('longitude')
-        radius = float(request.query_params.get('radius', 10))  # Default 10 km
+        radius = float(request.query_params.get('radius', 10))
         
         if not lat or not lng:
             return Response(
@@ -88,7 +133,6 @@ class SalonViewSet(viewsets.ModelViewSet):
         lat = float(lat)
         lng = float(lng)
         
-        # Calculate distance for each salon
         salons = []
         for salon in self.get_queryset():
             distance = self.calculate_distance(lat, lng, 
@@ -98,7 +142,6 @@ class SalonViewSet(viewsets.ModelViewSet):
                 salon.distance = round(distance, 2)
                 salons.append(salon)
         
-        # Sort by distance
         salons.sort(key=lambda x: x.distance)
         
         serializer = SalonListSerializer(salons, many=True)
@@ -114,8 +157,77 @@ class SalonViewSet(viewsets.ModelViewSet):
         km = 6371 * c
         return km
 
+    @action(detail=True, methods=['get'])
+    def stats(self, request, pk=None):
+        """Get salon statistics for owner dashboard"""
+        try:
+            salon = self.get_object()
+            
+            if salon.owner != request.user:
+                return Response(
+                    {'error': 'You can only view stats for your own salons'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # ✅ CONFIRMED BOOKINGS (actual valid bookings)
+            confirmed_bookings = Booking.objects.filter(
+                salon=salon,
+                status__in=['confirmed', 'in_progress', 'completed'],
+                barber__isnull=False
+            )
+            
+            # ✅ COMPLETED BOOKINGS (revenue)
+            completed_bookings = Booking.objects.filter(
+                salon=salon,
+                status='completed',
+                barber__isnull=False
+            )
+            
+            # ✅ PENDING BOOKINGS (waiting for barber)
+            pending_bookings = Booking.objects.filter(
+                salon=salon,
+                status='pending',
+                barber__isnull=True
+            )
+            
+            # ✅ CANCELLED BOOKINGS (unsuccessful)
+            cancelled_bookings = Booking.objects.filter(
+                salon=salon,
+                status='cancelled'
+            )
+            
+            # Calculate revenue
+            total_revenue = completed_bookings.aggregate(
+                total=Sum('service__price')
+            )['total'] or 0
+            
+            # Get barbers in this salon
+            barbers_count = Barber.objects.filter(salon=salon).count()
+            
+            stats_data = {
+                'salon_id': salon.id,
+                'salon_name': salon.name,
+                'total_confirmed_bookings': confirmed_bookings.count(),
+                'total_completed_bookings': completed_bookings.count(),
+                'total_pending_bookings': pending_bookings.count(),
+                'total_cancelled_bookings': cancelled_bookings.count(),
+                'total_revenue': float(total_revenue),
+                'total_barbers': barbers_count,
+                'rating': salon.rating,
+                'total_reviews': salon.total_reviews,
+            }
+            
+            return Response(stats_data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-# Service ViewSet
+
+# ============ SERVICE VIEWSET ============
+
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.filter(is_active=True)
     serializer_class = ServiceSerializer
@@ -128,25 +240,156 @@ class ServiceViewSet(viewsets.ModelViewSet):
         return [AllowAny()]
 
 
-# Barber ViewSet
+# ============ BARBER VIEWSET ============
+
 class BarberViewSet(viewsets.ModelViewSet):
-    queryset = Barber.objects.all()
+    queryset = Barber.objects.select_related('user', 'salon').all()
+    serializer_class = BarberDetailSerializer
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['salon', 'is_available']
     ordering_fields = ['rating', 'experience_years']
     
-    def get_serializer_class(self):
-        if self.action == 'list':
-            return BarberListSerializer
-        return BarberSerializer
+    def get_queryset(self):
+        """Return barbers with user and salon info preloaded"""
+        queryset = Barber.objects.select_related('user', 'salon').all()
+        salon_id = self.request.query_params.get('salon', None)
+        if salon_id:
+            queryset = queryset.filter(salon_id=salon_id)
+        return queryset
     
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated()]
-        return [AllowAny()]
+    def get_serializer_class(self):
+        """Always use detailed serializer with user info"""
+        return BarberDetailSerializer
+    
+    @action(detail=False, methods=['post'], url_path='join-request/(?P<salon_id>[^/.]+)')
+    def send_join_request(self, request, salon_id=None):
+        """Barber sends join request to a salon"""
+        if request.user.user_type != 'barber':
+            return Response(
+                {'error': 'Only barbers can send join requests'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            barber = Barber.objects.get(user=request.user)
+            if barber.salon:
+                return Response(
+                    {'error': 'You are already assigned to a salon. Leave current salon first.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Barber.DoesNotExist:
+            barber = Barber.objects.create(user=request.user)
+        
+        salon = get_object_or_404(Salon, id=salon_id)
+        existing_request = BarberJoinRequest.objects.filter(
+            barber=request.user,
+            salon=salon,
+            status='pending'
+        ).first()
+        
+        if existing_request:
+            return Response(
+                {'error': 'You already have a pending request for this salon'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        join_request = BarberJoinRequest.objects.create(
+            barber=request.user,
+            salon=salon,
+            message=request.data.get('message', '')
+        )
+        
+        serializer = BarberJoinRequestSerializer(join_request)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=False, methods=['get'], url_path='join-requests')
+    def get_join_requests(self, request):
+        """Owner gets join requests for their salons"""
+        if request.user.user_type != 'owner':
+            return Response(
+                {'error': 'Only owners can view join requests'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        salon_id = request.query_params.get('salon')
+        if not salon_id:
+            return Response(
+                {'error': 'Salon ID required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        salon = get_object_or_404(Salon, id=salon_id, owner=request.user)
+        
+        requests = BarberJoinRequest.objects.filter(salon=salon, status='pending')
+        serializer = BarberJoinRequestSerializer(requests, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'], url_path='approve-request/(?P<request_id>[^/.]+)')
+    def approve_request(self, request, request_id=None):
+        """Owner approves barber join request"""
+        if request.user.user_type != 'owner':
+            return Response(
+                {'error': 'Only owners can approve requests'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        join_request = get_object_or_404(BarberJoinRequest, id=request_id)
+        
+        if join_request.salon.owner != request.user:
+            return Response(
+                {'error': 'You can only approve requests for your own salons'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            barber = Barber.objects.get(user=join_request.barber)
+            if barber.salon:
+                join_request.status = 'rejected'
+                join_request.save()
+                return Response(
+                    {'error': 'Barber is already assigned to another salon'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Barber.DoesNotExist:
+            barber = Barber.objects.create(user=join_request.barber)
+        
+        join_request.status = 'approved'
+        join_request.save()
+        
+        barber.salon = join_request.salon
+        barber.save()
+        
+        return Response({
+            'message': 'Barber approved and assigned to salon',
+            'barber': BarberDetailSerializer(barber).data
+        })
+    
+    @action(detail=False, methods=['post'], url_path='reject-request/(?P<request_id>[^/.]+)')
+    def reject_request(self, request, request_id=None):
+        """Owner rejects barber join request"""
+        if request.user.user_type != 'owner':
+            return Response(
+                {'error': 'Only owners can reject requests'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        join_request = get_object_or_404(BarberJoinRequest, id=request_id)
+        
+        if join_request.salon.owner != request.user:
+            return Response(
+                {'error': 'You can only reject requests for your own salons'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        join_request.status = 'rejected'
+        join_request.save()
+        
+        return Response({'message': 'Request rejected'})
 
 
-# Booking ViewSet
+# ============ BOOKING VIEWSET ============
+
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
@@ -157,16 +400,13 @@ class BookingViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = Booking.objects.all()
         
-        # Filter by salon if provided
         salon_id = self.request.query_params.get('salon', None)
         if salon_id:
             queryset = queryset.filter(salon_id=salon_id)
         
-        # Customer sees only their bookings
         if user.user_type == 'customer':
             queryset = queryset.filter(customer=user)
         
-        # Barber sees all bookings for their salon
         elif user.user_type == 'barber':
             try:
                 barber = user.barber_profile
@@ -175,24 +415,54 @@ class BookingViewSet(viewsets.ModelViewSet):
             except:
                 queryset = queryset.none()
         
-        # Owner sees all bookings for their salons
         elif user.user_type == 'owner':
             queryset = queryset.filter(salon__owner=user)
         
         return queryset.order_by('-booking_date', '-booking_time')
     
     def create(self, request, *args, **kwargs):
-        """Customer creates booking - barber is initially null"""
+        """✅ Customer creates booking with time slot validation"""
         if request.user.user_type != 'customer':
             return Response(
                 {'error': 'Only customers can create bookings'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        booking_date = request.data.get('booking_date')
+        booking_time = request.data.get('booking_time')
+        
+        # Validate date and time format
+        try:
+            booking_datetime = datetime.strptime(
+                f"{booking_date} {booking_time}",
+                "%Y-%m-%d %H:%M"
+            )
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Invalid date or time format. Use YYYY-MM-DD HH:MM'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if booking is in the past
+        now = datetime.now()
+        if booking_datetime <= now:
+            return Response(
+                {'error': 'Cannot book appointments in the past'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if booking is at least 30 minutes from now
+        min_booking_time = now + timedelta(minutes=30)
+        if booking_datetime < min_booking_time:
+            return Response(
+                {'error': 'Please book at least 30 minutes in advance'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         data = request.data.copy()
         data['customer'] = request.user.id
         data['status'] = 'pending'
-        data['barber'] = None  # No barber assigned initially
+        data['barber'] = None
         
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
@@ -201,16 +471,10 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     def partial_update(self, request, *args, **kwargs):
-        """
-        Allow partial updates for:
-        - Barber self-assignment (auto-confirms booking)
-        - Status updates by assigned barber
-        - Customer cancellation
-        """
+        """Allow partial updates for barber assignment and status changes"""
         instance = self.get_object()
         user = request.user
         
-        # Check what's being updated
         barber_assignment = 'barber' in request.data
         status_update = 'status' in request.data
         
@@ -219,21 +483,18 @@ class BookingViewSet(viewsets.ModelViewSet):
             try:
                 barber = user.barber_profile
                 
-                # Check if barber works at this salon
                 if instance.salon != barber.salon:
                     return Response(
                         {'error': 'You can only assign yourself to bookings in your salon'},
                         status=status.HTTP_403_FORBIDDEN
                     )
                 
-                # Check if booking is still unassigned
                 if instance.barber:
                     return Response(
                         {'error': 'This booking is already assigned to another barber'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Check if booking is in valid status for assignment
                 if instance.status not in ['pending']:
                     return Response(
                         {'error': 'Can only assign yourself to pending bookings'},
@@ -242,7 +503,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 
                 # ✨ AUTO-CONFIRM when barber assigns themselves
                 instance.barber = barber
-                instance.status = 'confirmed'  # 👈 This is the key change!
+                instance.status = 'confirmed'
                 instance.save()
                 
                 serializer = self.get_serializer(instance)
@@ -262,14 +523,11 @@ class BookingViewSet(viewsets.ModelViewSet):
             new_status = request.data.get('status')
             current_status = instance.status
             
-            # Define who can update status
             can_update = False
             
-            # Customer can only cancel
             if user == instance.customer and new_status == 'cancelled':
                 can_update = True
             
-            # Barber can update if assigned to them
             elif user.user_type == 'barber':
                 try:
                     barber = user.barber_profile
@@ -284,7 +542,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            # Validate status transitions
             valid_transitions = {
                 'pending': ['confirmed', 'cancelled'],
                 'confirmed': ['in_progress', 'cancelled'],
@@ -299,50 +556,64 @@ class BookingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
-        # Perform update
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+        
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         """Cancel booking - customer or assigned barber can cancel"""
-        booking = self.get_object()
-        user = request.user
-        
-        can_cancel = False
-        
-        if user == booking.customer:
-            can_cancel = True
-        elif user.user_type == 'barber':
-            try:
-                if booking.barber == user.barber_profile:
-                    can_cancel = True
-            except:
-                pass
-        
-        if not can_cancel:
+        try:
+            booking = self.get_object()
+            user = request.user
+            
+            can_cancel = False
+            
+            if user == booking.customer:
+                can_cancel = True
+            
+            elif user.user_type == 'barber':
+                try:
+                    barber_profile = Barber.objects.get(user=user)
+                    if booking.barber == barber_profile:
+                        can_cancel = True
+                except Barber.DoesNotExist:
+                    pass
+            
+            if not can_cancel:
+                return Response(
+                    {'error': 'You cannot cancel this booking'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            if booking.status in ['completed', 'cancelled']:
+                return Response(
+                    {'error': f'Cannot cancel booking in {booking.status} status'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            booking.status = 'cancelled'
+            booking.save()
+            
+            serializer = self.get_serializer(booking)
+            return Response({
+                'message': 'Booking cancelled successfully',
+                'booking': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
             return Response(
-                {'error': 'You cannot cancel this booking'},
-                status=status.HTTP_403_FORBIDDEN
+                {'error': f'Failed to cancel booking: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
-        if booking.status in ['completed', 'cancelled']:
-            return Response(
-                {'error': 'Cannot cancel this booking'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        booking.status = 'cancelled'
-        booking.save()
-        
-        serializer = self.get_serializer(booking)
-        return Response(serializer.data)
 
-# Payment ViewSet
+
+# ============ PAYMENT VIEWSET ============
 
 class PaymentViewSet(viewsets.ModelViewSet):
+    serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'payment_method']
@@ -371,7 +642,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-# Review ViewSet
+# ============ REVIEW VIEWSET ============
+
 class ReviewViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['salon', 'barber', 'rating']
@@ -397,207 +669,3 @@ class ReviewViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(customer=self.request.user)
-class BarberViewSet(viewsets.ModelViewSet):
-    queryset = Barber.objects.all()
-    serializer_class = BarberDetailSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        queryset = Barber.objects.all()
-        salon_id = self.request.query_params.get('salon', None)
-        if salon_id:
-            queryset = queryset.filter(salon_id=salon_id)
-        return queryset
-    
-    @action(detail=False, methods=['post'], url_path='join-request/(?P<salon_id>[^/.]+)')
-    def send_join_request(self, request, salon_id=None):
-        """Barber sends join request to a salon"""
-        if request.user.user_type != 'barber':
-            return Response(
-                {'error': 'Only barbers can send join requests'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        # Check if barber already has a salon
-        try:
-            barber = Barber.objects.get(user=request.user)
-            if barber.salon:
-                return Response(
-                    {'error': 'You are already assigned to a salon. Leave current salon first.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except Barber.DoesNotExist:
-            # Create barber profile if doesn't exist
-            barber = Barber.objects.create(user=request.user)
-        
-        # Check if request already exists
-        salon = get_object_or_404(Salon, id=salon_id)
-        existing_request = BarberJoinRequest.objects.filter(
-            barber=request.user,
-            salon=salon,
-            status='pending'
-        ).first()
-        
-        if existing_request:
-            return Response(
-                {'error': 'You already have a pending request for this salon'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Create join request
-        join_request = BarberJoinRequest.objects.create(
-            barber=request.user,
-            salon=salon,
-            message=request.data.get('message', '')
-        )
-        
-        serializer = BarberJoinRequestSerializer(join_request)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-    @action(detail=False, methods=['get'], url_path='join-requests')
-    def get_join_requests(self, request):
-        """Owner gets join requests for their salons"""
-        if request.user.user_type != 'owner':
-            return Response(
-                {'error': 'Only owners can view join requests'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        salon_id = request.query_params.get('salon')
-        if not salon_id:
-            return Response(
-                {'error': 'Salon ID required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Verify salon belongs to this owner
-        salon = get_object_or_404(Salon, id=salon_id, owner=request.user)
-        
-        requests = BarberJoinRequest.objects.filter(salon=salon, status='pending')
-        serializer = BarberJoinRequestSerializer(requests, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['post'], url_path='approve-request/(?P<request_id>[^/.]+)')
-    def approve_request(self, request, request_id=None):
-        """Owner approves barber join request"""
-        if request.user.user_type != 'owner':
-            return Response(
-                {'error': 'Only owners can approve requests'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        join_request = get_object_or_404(BarberJoinRequest, id=request_id)
-        
-        # Verify salon belongs to this owner
-        if join_request.salon.owner != request.user:
-            return Response(
-                {'error': 'You can only approve requests for your own salons'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        # Check if barber already has a salon
-        try:
-            barber = Barber.objects.get(user=join_request.barber)
-            if barber.salon:
-                join_request.status = 'rejected'
-                join_request.save()
-                return Response(
-                    {'error': 'Barber is already assigned to another salon'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except Barber.DoesNotExist:
-            barber = Barber.objects.create(user=join_request.barber)
-        
-        # Approve request and assign barber to salon
-        join_request.status = 'approved'
-        join_request.save()
-        
-        barber.salon = join_request.salon
-        barber.save()
-        
-        return Response({
-            'message': 'Barber approved and assigned to salon',
-            'barber': BarberDetailSerializer(barber).data
-        })
-    
-    @action(detail=False, methods=['post'], url_path='reject-request/(?P<request_id>[^/.]+)')
-    def reject_request(self, request, request_id=None):
-        """Owner rejects barber join request"""
-        if request.user.user_type != 'owner':
-            return Response(
-                {'error': 'Only owners can reject requests'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        join_request = get_object_or_404(BarberJoinRequest, id=request_id)
-        
-        # Verify salon belongs to this owner
-        if join_request.salon.owner != request.user:
-            return Response(
-                {'error': 'You can only reject requests for your own salons'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        join_request.status = 'rejected'
-        join_request.save()
-        
-        return Response({'message': 'Request rejected'})
-    
-class SalonViewSet(viewsets.ModelViewSet):
-    queryset = Salon.objects.all()
-    serializer_class = SalonSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        user = self.request.user
-        if user.user_type == 'owner':
-            return Salon.objects.filter(owner=user)
-        return Salon.objects.filter(is_active=True)
-    
-    def partial_update(self, request, *args, **kwargs):
-        """Allow PATCH updates for salon (like toggling is_active)"""
-        instance = self.get_object()
-        
-        # Only owner can update their salon
-        if instance.owner != request.user:
-            return Response(
-                {'error': 'You can only update your own salons'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        # Perform partial update
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        
-        return Response(serializer.data)
-    
-    def update(self, request, *args, **kwargs):
-        """Allow PUT updates for salon"""
-        instance = self.get_object()
-        
-        # Only owner can update their salon
-        if instance.owner != request.user:
-            return Response(
-                {'error': 'You can only update your own salons'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        
-        return Response(serializer.data)
-    
-    def destroy(self, request, *args, **kwargs):
-        """Delete salon - only by owner"""
-        instance = self.get_object()
-        
-        if instance.owner != request.user:
-            return Response(
-                {'error': 'You can only delete your own salons'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)

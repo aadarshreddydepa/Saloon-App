@@ -1,47 +1,106 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   useColorScheme,
   Alert,
-  Platform,
+  ActivityIndicator,
+  FlatList,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { bookingAPI } from '../../services/api';
-import { scheduleAppointmentReminder } from '../../utils/notificationHelpers';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { bookingAPI, salonAPI } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
+import {
+  getAvailableTimeSlots,
+  getMinimumBookingDate,
+  formatDateForDisplay,
+  canBookTodayAfter,
+} from '../../utils/timeSlotHelper';
 
 export default function BookAppointment() {
   const navigation = useNavigation();
   const route = useRoute();
   const isDark = useColorScheme() === 'dark';
+  const { user } = useAuthStore();
+  
   const { salon, service } = route.params as any;
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedTime, setSelectedTime] = useState('10:00');
+  const [bookingDate, setBookingDate] = useState(getMinimumBookingDate());
+  const [bookingTime, setBookingTime] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [salonInfo, setSalonInfo] = useState<any>(null);
 
-  const theme = isDark 
-    ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', inputBg: '#0D0D0D' }
-    : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', inputBg: '#FAFAFA' };
+  const theme = isDark
+    ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', inputBg: '#0D0D0D', border: '#333333' }
+    : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', inputBg: '#FAFAFA', border: '#E0E0E0' };
 
-  const timeSlots = [
-    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '12:00', '12:30', '14:00', '14:30', '15:00', '15:30',
-    '16:00', '16:30', '17:00', '17:30', '18:00', '18:30',
-    '19:00', '19:30', '20:00', '20:30',
-  ];
+  useEffect(() => {
+    fetchSalonInfo();
+  }, []);
+
+  useEffect(() => {
+    if (salonInfo) {
+      updateAvailableSlots();
+    }
+  }, [bookingDate, salonInfo]);
+
+  const fetchSalonInfo = async () => {
+    try {
+      const response = await salonAPI.getById(salon.id);
+      setSalonInfo(response.data);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load salon information');
+    }
+  };
+
+  const updateAvailableSlots = () => {
+    if (!salonInfo) return;
+
+    const slots = getAvailableTimeSlots(
+      bookingDate,
+      salonInfo.opening_time,
+      salonInfo.closing_time
+    );
+
+    setAvailableSlots(slots);
+    setBookingTime('');
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (selectedDate) {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
+      
+      const minDate = getMinimumBookingDate();
+      
+      if (formattedDate >= minDate) {
+        setBookingDate(formattedDate);
+      } else {
+        Alert.alert('Invalid Date', 'Cannot book appointments in the past');
+      }
+    }
+    setShowDatePicker(false);
+  };
+
+  const handleTimeSelect = (time: string) => {
+    setBookingTime(time);
+  };
 
   const handleBooking = async () => {
-    if (!selectedDate || !selectedTime) {
-      Alert.alert('Error', 'Please select date and time');
+    if (!bookingTime) {
+      Alert.alert('Error', 'Please select a time slot');
       return;
     }
 
@@ -50,72 +109,93 @@ export default function BookAppointment() {
       const bookingData = {
         salon: salon.id,
         service: service.id,
-        booking_date: selectedDate.toISOString().split('T')[0],
-        booking_time: selectedTime + ':00',
-        notes: notes,
+        booking_date: bookingDate,
+        booking_time: bookingTime,
+        notes: notes || '',
       };
 
       await bookingAPI.create(bookingData);
 
-      // 🔔 Schedule reminder notification (1 hour before)
-      await scheduleAppointmentReminder(
-        bookingData.booking_date,
-        selectedTime,
-        salon.name,
-        service.name
-      );
-
-      Alert.alert(
-        '🎉 Success!',
-        'Booking created successfully!\n\n✅ You\'ll be notified when a barber accepts\n⏰ Reminder set for 1 hour before',
-        [
-          {
-            text: 'View Bookings',
-            onPress: () => navigation.navigate('Bookings' as never),
-          },
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+      Alert.alert('Success', 'Appointment booked successfully!', [
+        {
+          text: 'View Bookings',
+          onPress: () => navigation.navigate('CustomerBookings' as never),
+        },
+        {
+          text: 'Continue',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
     } catch (error: any) {
-      console.error('Booking error:', error.response?.data);
-      Alert.alert('Error', 'Failed to create booking. Please try again.');
+      Alert.alert(
+        'Booking Failed',
+        error.response?.data?.error || 'Failed to book appointment'
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  const TimeSlotItem = ({ time }: { time: string }) => (
+    <TouchableOpacity
+      style={[
+        styles.timeSlot,
+        {
+          backgroundColor: bookingTime === time ? theme.primary : theme.card,
+          borderColor: bookingTime === time ? theme.primary : theme.border,
+          borderWidth: 2,
+        }
+      ]}
+      onPress={() => handleTimeSelect(time)}
+    >
+      <Ionicons
+        name="time-outline"
+        size={20}
+        color={bookingTime === time ? (isDark ? '#000' : '#FFF') : theme.text}
+      />
+      <Text
+        style={[
+          styles.timeSlotText,
+          {
+            color: bookingTime === time ? (isDark ? '#000' : '#FFF') : theme.text,
+            fontWeight: bookingTime === time ? '700' : '600',
+          }
+        ]}
+      >
+        {time}
+      </Text>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <View style={[styles.header, { backgroundColor: theme.card }]}>
+      <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
+          <Ionicons name="chevron-back" size={28} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Book Appointment</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 28 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Booking Summary */}
-        <View style={[styles.summaryCard, { backgroundColor: theme.card }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Booking Summary</Text>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.text, opacity: 0.6 }]}>Salon</Text>
-            <Text style={[styles.summaryValue, { color: theme.text }]}>{salon.name}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.text, opacity: 0.6 }]}>Service</Text>
-            <Text style={[styles.summaryValue, { color: theme.text }]}>{service.name}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.text, opacity: 0.6 }]}>Duration</Text>
-            <Text style={[styles.summaryValue, { color: theme.text }]}>{service.duration} mins</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: theme.text, opacity: 0.6 }]}>Price</Text>
-            <Text style={[styles.summaryValue, { color: '#4CAF50' }]}>₹{service.price}</Text>
+        {/* Service Info */}
+        <View style={[styles.section, { borderColor: theme.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Service Details</Text>
+          <View style={[styles.infoCard, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}>
+            <View style={styles.infoRow}>
+              <Text style={[styles.infoLabel, { color: theme.text, opacity: 0.7 }]}>Service</Text>
+              <Text style={[styles.infoValue, { color: theme.text }]}>{service.name}</Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            <View style={styles.infoRow}>
+              <Text style={[styles.infoLabel, { color: theme.text, opacity: 0.7 }]}>Duration</Text>
+              <Text style={[styles.infoValue, { color: theme.text }]}>{service.duration} mins</Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            <View style={styles.infoRow}>
+              <Text style={[styles.infoLabel, { color: theme.text, opacity: 0.7 }]}>Price</Text>
+              <Text style={[styles.infoValue, { color: '#4CAF50' }]}>₹{service.price}</Text>
+            </View>
           </View>
         </View>
 
@@ -123,123 +203,141 @@ export default function BookAppointment() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Date</Text>
           <TouchableOpacity
-            style={[styles.dateButton, { backgroundColor: theme.card }]}
+            style={[styles.dateButton, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}
             onPress={() => setShowDatePicker(true)}
           >
             <Ionicons name="calendar-outline" size={24} color={theme.primary} />
-            <Text style={[styles.dateText, { color: theme.text }]}>
-              {selectedDate.toDateString()}
-            </Text>
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={[styles.dateButtonLabel, { color: theme.text, opacity: 0.7 }]}>Booking Date</Text>
+              <Text style={[styles.dateButtonValue, { color: theme.text }]}>
+                {formatDateForDisplay(bookingDate)}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.text} />
           </TouchableOpacity>
-          {showDatePicker && (
-            <DateTimePicker
-              value={selectedDate}
-              mode="date"
-              minimumDate={new Date()}
-              onChange={(event, date) => {
-                setShowDatePicker(Platform.OS === 'ios');
-                if (date) setSelectedDate(date);
-              }}
-            />
-          )}
+          <Text style={[styles.dateHint, { color: theme.text, opacity: 0.6 }]}>
+            ℹ️ Can only book from tomorrow onwards or for today after current time
+          </Text>
         </View>
 
-        {/* Time Selection */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Time</Text>
-          <View style={styles.timeGrid}>
-            {timeSlots.map((time) => (
-              <TouchableOpacity
-                key={time}
-                style={[
-                  styles.timeSlot,
-                  {
-                    backgroundColor: selectedTime === time ? theme.primary : theme.card,
-                    borderColor: selectedTime === time ? theme.primary : theme.border,
-                  }
-                ]}
-                onPress={() => setSelectedTime(time)}
-              >
-                <Text style={[
-                  styles.timeSlotText,
-                  { color: selectedTime === time ? (isDark ? '#000' : '#FFF') : theme.text }
-                ]}>
-                  {time}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Time Slots */}
+        {availableSlots.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Time</Text>
+            <FlatList
+              data={availableSlots}
+              renderItem={({ item }) => <TimeSlotItem time={item} />}
+              keyExtractor={(item) => item}
+              numColumns={3}
+              scrollEnabled={false}
+              columnWrapperStyle={styles.timeSlotGrid}
+            />
           </View>
-        </View>
+        ) : (
+          <View style={[styles.emptySlots, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}>
+            <Ionicons name="alert-circle-outline" size={40} color={theme.text + '50'} />
+            <Text style={[styles.emptySlotsText, { color: theme.text }]}>
+              No available slots for this date
+            </Text>
+            <Text style={[styles.emptySlotsSubtext, { color: theme.text, opacity: 0.6 }]}>
+              Please select a different date
+            </Text>
+          </View>
+        )}
 
         {/* Notes */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Additional Notes (Optional)</Text>
-          <View style={[styles.notesContainer, { backgroundColor: theme.card }]}>
-            <TextInput
-              style={[styles.notesInput, { color: theme.text }]}
-              placeholder="Add any special requests or preferences..."
-              placeholderTextColor={theme.text + '70'}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Additional Notes</Text>
+          <View style={[styles.notesInput, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}>
+            <Ionicons name="document-text-outline" size={20} color={theme.text} />
+            <Text style={[styles.notesText, { color: theme.text }]}>
+              {notes || 'Add any special requests...'}
+            </Text>
           </View>
         </View>
 
-        {/* Notification Info */}
-        <View style={[styles.infoBox, { backgroundColor: '#2196F320' }]}>
-          <Ionicons name="notifications" size={20} color="#2196F3" />
-          <Text style={[styles.infoText, { color: '#2196F3' }]}>
-            You'll receive notifications when your booking is confirmed and 1 hour before the appointment
-          </Text>
+        {/* Booking Summary */}
+        <View style={[styles.summaryCard, { backgroundColor: '#4CAF5020', borderColor: '#4CAF50', borderWidth: 1 }]}>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: theme.text }]}>Salon</Text>
+            <Text style={[styles.summaryValue, { color: theme.text }]}>{salon.name}</Text>
+          </View>
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: theme.text }]}>Date & Time</Text>
+            <Text style={[styles.summaryValue, { color: theme.text }]}>
+              {bookingDate} {bookingTime || '—'}
+            </Text>
+          </View>
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: theme.text }]}>Total Amount</Text>
+            <Text style={[styles.summaryValue, { color: '#4CAF50', fontWeight: 'bold' }]}>₹{service.price}</Text>
+          </View>
         </View>
+
+        {/* Book Button */}
+        <TouchableOpacity
+          style={[styles.bookButton, { backgroundColor: bookingTime ? theme.primary : theme.primary + '50' }]}
+          onPress={handleBooking}
+          disabled={!bookingTime || loading}
+        >
+          {loading ? (
+            <ActivityIndicator color={isDark ? '#000' : '#FFF'} />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={24} color={isDark ? '#000' : '#FFF'} />
+              <Text style={[styles.bookButtonText, { color: isDark ? '#000' : '#FFF', marginLeft: 10 }]}>
+                Confirm Booking
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Book Button */}
-      <View style={[styles.footer, { backgroundColor: theme.card }]}>
-        <View style={styles.totalContainer}>
-          <Text style={[styles.totalLabel, { color: theme.text }]}>Total Amount</Text>
-          <Text style={[styles.totalAmount, { color: '#4CAF50' }]}>₹{service.price}</Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.bookButton, { backgroundColor: theme.primary, opacity: loading ? 0.7 : 1 }]}
-          onPress={handleBooking}
-          disabled={loading}
-        >
-          <Text style={[styles.bookButtonText, { color: isDark ? '#000' : '#FFF' }]}>
-            {loading ? 'Booking...' : 'Confirm Booking'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Date Picker Modal */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={new Date(bookingDate)}
+          mode="date"
+          display="spinner"
+          onChange={handleDateChange}
+          minimumDate={new Date(getMinimumBookingDate())}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
+  header: { paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { fontSize: 20, fontWeight: 'bold' },
-  summaryCard: { margin: 20, padding: 20, borderRadius: 20 },
-  section: { paddingHorizontal: 20, marginBottom: 25 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  summaryLabel: { fontSize: 15 },
-  summaryValue: { fontSize: 15, fontWeight: '600' },
-  dateButton: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 15 },
-  dateText: { fontSize: 16, marginLeft: 15, fontWeight: '500' },
-  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  timeSlot: { width: '23%', paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginBottom: 10, borderWidth: 1.5 },
-  timeSlotText: { fontSize: 14, fontWeight: '600' },
-  notesContainer: { borderRadius: 15, padding: 15 },
-  notesInput: { fontSize: 15, minHeight: 100 },
-  infoBox: { marginHorizontal: 20, padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  infoText: { fontSize: 13, marginLeft: 10, flex: 1, lineHeight: 18 },
-  footer: { paddingHorizontal: 20, paddingVertical: 20, borderTopWidth: 0 },
-  totalContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
-  totalLabel: { fontSize: 16 },
-  totalAmount: { fontSize: 24, fontWeight: 'bold' },
-  bookButton: { paddingVertical: 18, borderRadius: 15, alignItems: 'center' },
-  bookButtonText: { fontSize: 18, fontWeight: 'bold' },
+  section: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
+  infoCard: { padding: 16, borderRadius: 16 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  infoLabel: { fontSize: 14 },
+  infoValue: { fontSize: 16, fontWeight: '600' },
+  divider: { height: 1, marginVertical: 12 },
+  dateButton: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16 },
+  dateButtonLabel: { fontSize: 13 },
+  dateButtonValue: { fontSize: 16, fontWeight: 'bold', marginTop: 2 },
+  dateHint: { fontSize: 12, marginTop: 8 },
+  timeSlotGrid: { justifyContent: 'space-between', marginBottom: 12 },
+  timeSlot: { flex: 1, marginHorizontal: 4, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  timeSlotText: { fontSize: 14, marginTop: 6 },
+  emptySlots: { marginHorizontal: 20, padding: 40, borderRadius: 16, alignItems: 'center' },
+  emptySlotsText: { fontSize: 16, fontWeight: '600', marginTop: 12 },
+  emptySlotsSubtext: { fontSize: 14, marginTop: 6 },
+  notesInput: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16 },
+  notesText: { marginLeft: 12, fontSize: 14 },
+  summaryCard: { marginHorizontal: 20, padding: 16, borderRadius: 16, marginBottom: 20 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 14 },
+  summaryValue: { fontSize: 14, fontWeight: '600' },
+  bookButton: { flexDirection: 'row', marginHorizontal: 20, paddingVertical: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  bookButtonText: { fontSize: 16, fontWeight: 'bold' },
 });
