@@ -151,12 +151,7 @@ export default function OwnerDashboard() {
           <Text style={[styles.greeting, { color: theme.text }]}>Welcome Back! 👋</Text>
           <Text style={[styles.userName, { color: theme.text }]}>{displayName}</Text>
         </View>
-        <TouchableOpacity 
-          style={[styles.notificationButton, { backgroundColor: theme.inputBg }]}
-          onPress={() => navigation.navigate('Profile' as never)}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.text} />
-        </TouchableOpacity>
+        
       </View>
 
       <ScrollView 

@@ -9,113 +9,111 @@ import {
   Alert,
   useColorScheme,
   ActivityIndicator,
+  Image,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { Picker } from '@react-native-picker/picker';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { salonAPI, serviceAPI } from '../../services/api';
+import imageService from '../../services/imageService';
 
 export default function AddService() {
   const navigation = useNavigation();
+  const route = useRoute();
   const isDark = useColorScheme() === 'dark';
+  
+  const { salon: preSelectedSalon } = route.params || {};
+
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [salons, setSalons] = useState([]);
-  const [loadingSalons, setLoadingSalons] = useState(true);
-  const [selectedSalon, setSelectedSalon] = useState<any>(null);
+  const [showDurationModal, setShowDurationModal] = useState(false);
   const [formData, setFormData] = useState({
+    salon: preSelectedSalon?.id || '',
     name: '',
     description: '',
     price: '',
-    duration: '',
+    duration: '30',
+    image: '',
   });
 
-  const theme = isDark 
-    ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', inputBg: '#0D0D0D' }
-    : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', inputBg: '#FAFAFA' };
+  const theme = isDark
+    ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', inputBg: '#0D0D0D', border: '#333333' }
+    : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', inputBg: '#FAFAFA', border: '#E0E0E0' };
+
+  const durationOptions = [];
+  for (let i = 5; i <= 120; i += 5) {
+    const hours = Math.floor(i / 60);
+    const minutes = i % 60;
+    const label = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    durationOptions.push({ label, value: i.toString(), minutes: i });
+  }
 
   useEffect(() => {
-    fetchSalons();
+    if (!preSelectedSalon) {
+      fetchSalons();
+    }
   }, []);
 
   const fetchSalons = async () => {
     try {
       const response = await salonAPI.getAll();
       setSalons(response.data);
-      if (response.data.length > 0) {
-        setSelectedSalon(response.data[0]);
-      }
     } catch (error) {
       console.error('Error fetching salons:', error);
       Alert.alert('Error', 'Failed to load salons');
-    } finally {
-      setLoadingSalons(false);
     }
   };
 
+  const handleUploadImage = async () => {
+    setUploadingImage(true);
+    try {
+      const uris = await imageService.showImagePickerOptions(false);
+      if (uris && uris.length > 0) {
+        const url = await imageService.uploadToCloudinary(uris[0], 'services');
+        if (url) {
+          setFormData({ ...formData, image: url });
+          Alert.alert('Success', 'Image uploaded!');
+        }
+      }
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const formatDurationDisplay = (minutes: string) => {
+    const mins = parseInt(minutes);
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${String(hours).padStart(2, '0')}:${String(remainingMins).padStart(2, '0')}`;
+  };
+
+  const handleSelectDuration = (value: string) => {
+    setFormData({ ...formData, duration: value });
+    setShowDurationModal(false);
+  };
+
   const handleAddService = async () => {
-    if (!formData.name || !formData.price || !formData.duration || !selectedSalon) {
-      Alert.alert('Error', 'Please fill all required fields and select a salon');
+    if (!formData.salon || !formData.name || !formData.price || !formData.duration) {
+      Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
     setLoading(true);
     try {
-      await serviceAPI.create({
-        salon: selectedSalon.id,
-        name: formData.name,
-        description: formData.description,
-        price: formData.price,
-        duration: parseInt(formData.duration),
-        is_active: true,
-      });
-
+      await serviceAPI.create(formData);
       Alert.alert('Success', 'Service added successfully!', [
-        { text: 'Add Another', onPress: () => setFormData({ name: '', description: '', price: '', duration: '' }) },
-        { text: 'Done', onPress: () => navigation.goBack() },
+        { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error: any) {
       console.error('Add service error:', error.response?.data);
-      Alert.alert('Error', 'Failed to add service. Please try again.');
+      Alert.alert('Error', 'Failed to add service');
     } finally {
       setLoading(false);
     }
   };
-
-  if (loadingSalons) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
-    );
-  }
-
-  if (salons.length === 0) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.bg }]}>
-        <View style={[styles.header, { backgroundColor: theme.card }]}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Add Service</Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <View style={styles.emptyContainer}>
-          <Ionicons name="storefront-outline" size={80} color={theme.text + '50'} />
-          <Text style={[styles.emptyText, { color: theme.text }]}>No Salons Yet</Text>
-          <Text style={[styles.emptySubtext, { color: theme.text, opacity: 0.6 }]}>
-            Please add a salon first before adding services
-          </Text>
-          <TouchableOpacity
-            style={[styles.addSalonButton, { backgroundColor: theme.primary }]}
-            onPress={() => navigation.navigate('AddSalon' as never)}
-          >
-            <Text style={[styles.addSalonButtonText, { color: isDark ? '#000' : '#FFF' }]}>
-              Add Salon
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
@@ -128,27 +126,74 @@ export default function AddService() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.formCard, { backgroundColor: theme.card }]}>
-          <Text style={[styles.label, { color: theme.text }]}>Select Salon</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.salonScroll}>
-            {salons.map((salon: any) => (
+        <View style={[styles.section, { backgroundColor: theme.card }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Service Image</Text>
+          {formData.image ? (
+            <View style={styles.imageContainer}>
+              <Image source={{ uri: formData.image }} style={styles.serviceImage} />
               <TouchableOpacity
-                key={salon.id}
-                style={[
-                  styles.salonChip,
-                  { 
-                    backgroundColor: selectedSalon?.id === salon.id ? theme.primary : theme.inputBg,
-                    borderColor: selectedSalon?.id === salon.id ? theme.primary : theme.inputBg,
-                  }
-                ]}
-                onPress={() => setSelectedSalon(salon)}
+                style={styles.changeImageButton}
+                onPress={handleUploadImage}
+                disabled={uploadingImage}
               >
-                <Text style={[styles.salonChipText, { color: selectedSalon?.id === salon.id ? (isDark ? '#000' : '#FFF') : theme.text }]}>
-                  {salon.name}
-                </Text>
+                {uploadingImage ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="camera" size={18} color="#FFF" />
+                    <Text style={styles.changeImageText}>Change</Text>
+                  </>
+                )}
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.uploadButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+              onPress={handleUploadImage}
+              disabled={uploadingImage}
+            >
+              {uploadingImage ? (
+                <ActivityIndicator color={theme.primary} />
+              ) : (
+                <>
+                  <Ionicons name="image" size={40} color={theme.primary} />
+                  <Text style={[styles.uploadText, { color: theme.text }]}>
+                    Upload Service Image
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={[styles.formCard, { backgroundColor: theme.card }]}>
+          {preSelectedSalon ? (
+            <View style={[styles.salonInfoBox, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
+              <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.salonInfoLabel, { color: theme.text, opacity: 0.6 }]}>
+                  Adding service to:
+                </Text>
+                <Text style={[styles.salonInfoName, { color: theme.text }]}>
+                  {preSelectedSalon.name}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.pickerContainer, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
+              <Ionicons name="storefront-outline" size={20} color={theme.text} style={styles.icon} />
+              <Picker
+                selectedValue={formData.salon}
+                onValueChange={(value) => setFormData({ ...formData, salon: value })}
+                style={[styles.picker, { color: theme.text }]}
+              >
+                <Picker.Item label="Select Salon *" value="" />
+                {salons.map((salon: any) => (
+                  <Picker.Item key={salon.id} label={salon.name} value={salon.id} />
+                ))}
+              </Picker>
+            </View>
+          )}
 
           <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
             <Ionicons name="cut-outline" size={20} color={theme.text} style={styles.icon} />
@@ -181,56 +226,125 @@ export default function AddService() {
               placeholderTextColor={theme.text + '70'}
               value={formData.price}
               onChangeText={(text) => setFormData({ ...formData, price: text })}
-              keyboardType="decimal-pad"
+              keyboardType="numeric"
             />
           </View>
 
-          <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
-            <Ionicons name="time-outline" size={20} color={theme.text} style={styles.icon} />
-            <TextInput
-              style={[styles.input, { color: theme.text }]}
-              placeholder="Duration (minutes) *"
-              placeholderTextColor={theme.text + '70'}
-              value={formData.duration}
-              onChangeText={(text) => setFormData({ ...formData, duration: text })}
-              keyboardType="number-pad"
-            />
+          {/* Duration Picker Button */}
+          <View style={styles.durationSection}>
+            <Text style={[styles.durationLabel, { color: theme.text }]}>Duration *</Text>
+            <TouchableOpacity
+              style={[styles.durationButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+              onPress={() => setShowDurationModal(true)}
+            >
+              <Ionicons name="time-outline" size={20} color={theme.text} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.durationButtonLabel, { color: theme.text, opacity: 0.6 }]}>
+                  Service Duration
+                </Text>
+                <Text style={[styles.durationButtonValue, { color: theme.text }]}>
+                  {formatDurationDisplay(formData.duration)} ({formData.duration} minutes)
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.text} />
+            </TouchableOpacity>
           </View>
         </View>
 
         <TouchableOpacity
-          style={[styles.addButton, { backgroundColor: theme.primary, opacity: loading ? 0.7 : 1 }]}
+          style={[styles.submitButton, { backgroundColor: theme.primary, opacity: loading ? 0.7 : 1 }]}
           onPress={handleAddService}
           disabled={loading}
         >
-          <Text style={[styles.addButtonText, { color: isDark ? '#000' : '#FFF' }]}>
+          <Text style={[styles.submitButtonText, { color: isDark ? '#000' : '#FFF' }]}>
             {loading ? 'Adding Service...' : 'Add Service'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Duration Selection Modal */}
+      <Modal
+        visible={showDurationModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDurationModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Select Duration</Text>
+              <TouchableOpacity onPress={() => setShowDurationModal(false)}>
+                <Ionicons name="close" size={28} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={durationOptions}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.durationOption,
+                    { backgroundColor: formData.duration === item.value ? theme.primary + '20' : 'transparent' }
+                  ]}
+                  onPress={() => handleSelectDuration(item.value)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.durationOptionTime, { color: theme.text }]}>
+                      {item.label}
+                    </Text>
+                    <Text style={[styles.durationOptionMinutes, { color: theme.text, opacity: 0.6 }]}>
+                      {item.minutes} minutes
+                    </Text>
+                  </View>
+                  {formData.duration === item.value && (
+                    <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
-  headerTitle: { fontSize: 20, fontWeight: 'bold' },
-  content: { flex: 1, padding: 20 },
-  formCard: { borderRadius: 20, padding: 20, marginBottom: 20 },
-  label: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
-  salonScroll: { marginBottom: 20 },
-  salonChip: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20, marginRight: 10, borderWidth: 2 },
-  salonChipText: { fontSize: 14, fontWeight: '600' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', flex: 1, textAlign: 'center' },
+  content: { flex: 1 },
+  section: { margin: 20, padding: 20, borderRadius: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+  imageContainer: { position: 'relative' },
+  serviceImage: { width: '100%', height: 180, borderRadius: 15 },
+  changeImageButton: { position: 'absolute', bottom: 12, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  changeImageText: { color: '#FFF', marginLeft: 6, fontSize: 13, fontWeight: '600' },
+  uploadButton: { height: 180, borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderStyle: 'dashed' },
+  uploadText: { fontSize: 14, marginTop: 10, fontWeight: '600' },
+  formCard: { margin: 20, padding: 20, borderRadius: 20 },
+  salonInfoBox: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1 },
+  salonInfoLabel: { fontSize: 12 },
+  salonInfoName: { fontSize: 16, fontWeight: 'bold', marginTop: 2 },
+  pickerContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginBottom: 15, minHeight: 55, borderWidth: 1 },
+  picker: { flex: 1, marginLeft: -10 },
   inputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginBottom: 15, minHeight: 55 },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, paddingVertical: 10 },
-  addButton: { borderRadius: 15, paddingVertical: 18, alignItems: 'center', marginBottom: 40 },
-  addButtonText: { fontSize: 18, fontWeight: 'bold' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  emptyText: { fontSize: 24, fontWeight: 'bold', marginTop: 20, marginBottom: 10 },
-  emptySubtext: { fontSize: 16, textAlign: 'center', marginBottom: 30 },
-  addSalonButton: { paddingHorizontal: 30, paddingVertical: 15, borderRadius: 15 },
-  addSalonButtonText: { fontSize: 16, fontWeight: 'bold' },
+  durationSection: { marginBottom: 15 },
+  durationLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  durationButton: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, borderWidth: 1 },
+  durationButtonLabel: { fontSize: 11 },
+  durationButtonValue: { fontSize: 16, fontWeight: '600', marginTop: 2 },
+  submitButton: { marginHorizontal: 20, marginBottom: 40, borderRadius: 15, paddingVertical: 18, alignItems: 'center' },
+  submitButtonText: { fontSize: 18, fontWeight: 'bold' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 25, borderTopRightRadius: 25, maxHeight: '70%', paddingBottom: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold' },
+  durationOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
+  durationOptionTime: { fontSize: 18, fontWeight: '600' },
+  durationOptionMinutes: { fontSize: 13, marginTop: 2 },
 });
