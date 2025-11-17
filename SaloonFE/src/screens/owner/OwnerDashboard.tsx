@@ -8,7 +8,6 @@ import {
   useColorScheme,
   RefreshControl,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -22,11 +21,13 @@ export default function OwnerDashboard() {
   const isDark = useColorScheme() === 'dark';
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
+  const [recentBookings, setRecentBookings] = useState([]);
   const [stats, setStats] = useState({
     totalSalons: 0,
-    totalBookings: 0,
+    todayValidBookings: 0,
+    todayCompletedBookings: 0,
     todayBookings: 0,
-    revenue: 0,
+    todayRevenue: 0,
   });
 
   const theme = isDark 
@@ -45,20 +46,75 @@ export default function OwnerDashboard() {
       ]);
 
       const salons = salonsRes.data;
-      const bookings = bookingsRes.data;
+      const allBookings = bookingsRes.data;
       const today = new Date().toISOString().split('T')[0];
+
+      // ✅ Filter TODAY's bookings only
+      const todayBookings = allBookings.filter((b: any) => b.booking_date === today);
+
+      // ✅ TODAY's VALID bookings (confirmed, in_progress, completed with barber)
+      const todayValidBookings = todayBookings.filter((b: any) => 
+        (b.status === 'confirmed' || b.status === 'in_progress' || b.status === 'completed') && 
+        b.barber !== null
+      );
+
+      // ✅ TODAY's COMPLETED bookings only
+      const todayCompletedBookings = todayBookings.filter((b: any) => 
+        b.status === 'completed' && b.barber !== null
+      );
+
+      // ✅ Calculate revenue ONLY from TODAY's completed bookings
+      const todayRevenue = todayCompletedBookings.reduce(
+        (sum: number, b: any) => sum + (parseFloat(b.service_price) || 0),
+        0
+      );
+
+      // ✅ Sort bookings by creation date (most recent first)
+      const sortedBookings = [...allBookings].sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setRecentBookings(sortedBookings.slice(0, 3));
 
       setStats({
         totalSalons: salons.length || 0,
-        totalBookings: bookings.length || 0,
-        todayBookings: bookings.filter((b: any) => b.booking_date === today).length || 0,
-        revenue: bookings.reduce((sum: number, b: any) => sum + (parseFloat(b.service_price) || 0), 0),
+        todayValidBookings: todayValidBookings.length || 0,
+        todayCompletedBookings: todayCompletedBookings.length || 0,
+        todayBookings: todayBookings.length || 0,
+        todayRevenue: todayRevenue,
       });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: any = {
+      pending: '#FF9800',
+      confirmed: '#2196F3',
+      in_progress: '#9C27B0',
+      completed: '#4CAF50',
+      cancelled: '#F44336',
+    };
+    return colors[status] || '#808080';
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
   };
 
   const quickActions = [
@@ -70,10 +126,8 @@ export default function OwnerDashboard() {
 
   const handleQuickAction = (screen: string) => {
     if (screen === 'My Salons' || screen === 'Bookings') {
-      // Navigate to tab
       navigation.navigate(screen as never);
     } else {
-      // Navigate to stack screen
       navigation.navigate(screen as never);
     }
   };
@@ -111,14 +165,14 @@ export default function OwnerDashboard() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchDashboardData} />}
       >
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Overview</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Overview</Text>
           <View style={styles.statsGrid}>
             <StatCard title="Total Salons" value={stats.totalSalons} icon="storefront" color="#4CAF50" />
-            <StatCard title="Total Bookings" value={stats.totalBookings} icon="calendar" color="#2196F3" />
+            <StatCard title="Valid Bookings" value={stats.todayValidBookings} icon="calendar" color="#2196F3" />
           </View>
           <View style={styles.statsGrid}>
-            <StatCard title="Today's Bookings" value={stats.todayBookings} icon="today" color="#FF9800" />
-            <StatCard title="Revenue" value={`₹${stats.revenue.toFixed(0)}`} icon="cash" color="#9C27B0" />
+            <StatCard title="Completed Today" value={stats.todayCompletedBookings} icon="checkmark-done" color="#FF9800" />
+            <StatCard title="Today's Revenue" value={`₹${stats.todayRevenue.toFixed(0)}`} icon="cash" color="#9C27B0" />
           </View>
         </View>
 
@@ -141,13 +195,41 @@ export default function OwnerDashboard() {
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
-          <View style={[styles.activityCard, { backgroundColor: theme.card }]}>
-            <Ionicons name="time-outline" size={24} color={theme.text} />
-            <Text style={[styles.activityText, { color: theme.text }]}>
-              {stats.todayBookings} new bookings today
-            </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Bookings' as never)}>
+              <Text style={[styles.viewAllText, { color: theme.primary }]}>View All</Text>
+            </TouchableOpacity>
           </View>
+
+          {recentBookings.length > 0 ? (
+            recentBookings.map((booking: any) => (
+              <View key={booking.id} style={[styles.recentBookingCard, { backgroundColor: theme.card }]}>
+                <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(booking.status) }]} />
+                <View style={styles.bookingContent}>
+                  <View style={styles.bookingHeader}>
+                    <Text style={[styles.bookingCustomer, { color: theme.text }]} numberOfLines={1}>
+                      {booking.customer_name}
+                    </Text>
+                    <Text style={[styles.bookingTime, { color: theme.text, opacity: 0.5 }]}>
+                      {formatTimeAgo(booking.created_at)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.bookingService, { color: theme.text, opacity: 0.7 }]} numberOfLines={1}>
+                    {booking.service_name} • {booking.salon_name}
+                  </Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={[styles.emptyActivity, { backgroundColor: theme.card }]}>
+              <Ionicons name="calendar-outline" size={40} color={theme.text + '50'} />
+              <Text style={[styles.emptyText, { color: theme.text, opacity: 0.6 }]}>
+                No recent bookings
+              </Text>
+            </View>
+          )}
+
           {stats.totalSalons === 0 && (
             <TouchableOpacity
               style={[styles.getStartedCard, { backgroundColor: '#4CAF50' }]}
@@ -171,18 +253,29 @@ const styles = StyleSheet.create({
   notificationButton: { width: 45, height: 45, borderRadius: 22.5, justifyContent: 'center', alignItems: 'center', position: 'absolute', top: 60, right: 20 },
   content: { flex: 1 },
   section: { padding: 20 },
-  sectionTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 15 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  sectionTitle: { fontSize: 22, fontWeight: 'bold' },
+  viewAllText: { fontSize: 14, fontWeight: '600' },
   statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   statCard: { flex: 1, marginHorizontal: 5, padding: 20, borderRadius: 20, alignItems: 'center' },
   statIconContainer: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   statValue: { fontSize: 24, fontWeight: 'bold', marginBottom: 4 },
   statTitle: { fontSize: 12, textAlign: 'center' },
+  revenueNote: { marginHorizontal: 20, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  revenueNoteText: { fontSize: 13, marginLeft: 10, flex: 1 },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   actionCard: { width: (width - 60) / 2, padding: 20, borderRadius: 20, alignItems: 'center', marginBottom: 15 },
   actionIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   actionTitle: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  activityCard: { flexDirection: 'row', padding: 20, borderRadius: 15, alignItems: 'center', marginBottom: 15 },
-  activityText: { fontSize: 16, marginLeft: 15 },
-  getStartedCard: { flexDirection: 'row', padding: 20, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  recentBookingCard: { flexDirection: 'row', padding: 12, borderRadius: 12, marginBottom: 10, alignItems: 'center' },
+  statusIndicator: { width: 4, height: 40, borderRadius: 2, marginRight: 12 },
+  bookingContent: { flex: 1 },
+  bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  bookingCustomer: { fontSize: 15, fontWeight: '600', flex: 1 },
+  bookingTime: { fontSize: 12, marginLeft: 8 },
+  bookingService: { fontSize: 13 },
+  emptyActivity: { padding: 40, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { fontSize: 14, marginTop: 10, textAlign: 'center' },
+  getStartedCard: { flexDirection: 'row', padding: 20, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 15 },
   getStartedText: { fontSize: 16, color: '#FFF', fontWeight: 'bold', marginLeft: 10 },
 });

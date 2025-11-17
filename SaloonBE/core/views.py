@@ -163,8 +163,8 @@ class SalonViewSet(viewsets.ModelViewSet):
         try:
             salon = self.get_object()
             
-            if salon.owner != request.user:
-                return Response(
+            if salon.owner != request.user:  # pyright: ignore[reportUnreachable]
+                return Response(  # pyright: ignore[reportUnreachable]
                     {'error': 'You can only view stats for your own salons'},
                     status=status.HTTP_403_FORBIDDEN
                 )
