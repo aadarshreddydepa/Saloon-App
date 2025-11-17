@@ -10,9 +10,12 @@ import {
   useColorScheme,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Location from 'expo-location';
 import { salonAPI } from '../../services/api';
 import imageService from '../../services/imageService';
 import ImageGallery from '../../components/ImageGallery';
@@ -22,6 +25,10 @@ export default function AddSalon() {
   const [loading, setLoading] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+  const [showOpeningPicker, setShowOpeningPicker] = useState(false);
+  const [showClosingPicker, setShowClosingPicker] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -34,11 +41,12 @@ export default function AddSalon() {
     cover_image: '',
     gallery_images: [] as string[],
   });
+
   const isDark = useColorScheme() === 'dark';
 
   const theme = isDark
-    ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', inputBg: '#0D0D0D' }
-    : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', inputBg: '#FAFAFA' };
+    ? { bg: '#000000', card: '#1A1A1A', text: '#C0C0C0', primary: '#C0C0C0', inputBg: '#0D0D0D', border: '#333333' }
+    : { bg: '#F5F5F5', card: '#FFFFFF', text: '#000000', primary: '#000000', inputBg: '#FAFAFA', border: '#E0E0E0' };
 
   const handleUploadCoverImage = async () => {
     setUploadingCover(true);
@@ -80,9 +88,96 @@ export default function AddSalon() {
     setFormData({ ...formData, gallery_images: newGallery });
   };
 
+  const handleTimeChange = (event: any, selectedDate: Date | undefined, type: 'opening' | 'closing') => {
+    if (Platform.OS === 'android') {
+      setShowOpeningPicker(false);
+      setShowClosingPicker(false);
+    }
+
+    if (selectedDate) {
+      const hours = String(selectedDate.getHours()).padStart(2, '0');
+      const minutes = String(selectedDate.getMinutes()).padStart(2, '0');
+      const timeString = `${hours}:${minutes}`;
+
+      if (type === 'opening') {
+        setFormData({ ...formData, opening_time: timeString });
+      } else {
+        setFormData({ ...formData, closing_time: timeString });
+      }
+    }
+  };
+
+  const getDateFromTime = (timeString: string): Date => {
+    const date = new Date();
+    if (timeString) {
+      const [hours, minutes] = timeString.split(':');
+      date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    }
+    return date;
+  };
+
+  const handleGetLocation = async () => {
+    try {
+      setFetchingLocation(true);
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please enable location access to use this feature');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const { latitude, longitude } = location.coords;
+      const roundedLat = parseFloat(latitude.toFixed(6));
+      const roundedLng = parseFloat(longitude.toFixed(6));
+
+      const addressResults = await Location.reverseGeocodeAsync({
+        latitude: roundedLat,
+        longitude: roundedLng,
+      });
+
+      if (addressResults.length > 0) {
+        const addressData = addressResults[0];
+        
+        const formattedAddress = [
+          addressData.name,
+          addressData.street,
+          addressData.city,
+          addressData.region,
+          addressData.postalCode,
+          addressData.country,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        setFormData({
+          ...formData,
+          address: formattedAddress,
+          latitude: roundedLat.toString(),
+          longitude: roundedLng.toString(),
+        });
+
+        Alert.alert('Location Found', 'Address and coordinates updated successfully');
+      }
+    } catch (error) {
+      console.error('Location error:', error);
+      Alert.alert('Error', 'Failed to fetch location. Please try again.');
+    } finally {
+      setFetchingLocation(false);
+    }
+  };
+
   const handleAddSalon = async () => {
     if (!formData.name || !formData.address || !formData.phone) {
       Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (formData.latitude === '0.0' || formData.longitude === '0.0') {
+      Alert.alert('Error', 'Please get location coordinates');
       return;
     }
 
@@ -111,7 +206,6 @@ export default function AddSalon() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Cover Image Section */}
         <View style={[styles.section, { backgroundColor: theme.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Cover Image</Text>
           {formData.cover_image ? (
@@ -152,7 +246,6 @@ export default function AddSalon() {
           )}
         </View>
 
-        {/* Gallery Section */}
         <View style={[styles.section, { backgroundColor: theme.card }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
@@ -189,7 +282,6 @@ export default function AddSalon() {
           )}
         </View>
 
-        {/* Rest of the form fields... */}
         <View style={[styles.formCard, { backgroundColor: theme.card }]}>
           <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
             <Ionicons name="storefront-outline" size={20} color={theme.text} style={styles.icon} />
@@ -214,15 +306,45 @@ export default function AddSalon() {
             />
           </View>
 
-          <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
-            <Ionicons name="location-outline" size={20} color={theme.text} style={styles.icon} />
-            <TextInput
-              style={[styles.input, { color: theme.text }]}
-              placeholder="Address *"
-              placeholderTextColor={theme.text + '70'}
-              value={formData.address}
-              onChangeText={(text) => setFormData({ ...formData, address: text })}
-            />
+          <View style={styles.locationSection}>
+            <View style={styles.locationHeader}>
+              <Text style={[styles.locationLabel, { color: theme.text }]}>Location *</Text>
+              <TouchableOpacity
+                style={[styles.locationButton, { backgroundColor: '#2196F3' }]}
+                onPress={handleGetLocation}
+                disabled={fetchingLocation}
+              >
+                {fetchingLocation ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="location" size={16} color="#FFF" />
+                    <Text style={styles.locationButtonText}>Get Location</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
+              <Ionicons name="location-outline" size={20} color={theme.text} style={styles.icon} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Address *"
+                placeholderTextColor={theme.text + '70'}
+                value={formData.address}
+                onChangeText={(text) => setFormData({ ...formData, address: text })}
+                multiline
+              />
+            </View>
+
+            {formData.latitude !== '0.0' && formData.longitude !== '0.0' && (
+              <View style={[styles.coordinatesBox, { backgroundColor: theme.inputBg, borderColor: theme.border, borderWidth: 1 }]}>
+                <Ionicons name="pin" size={14} color="#4CAF50" />
+                <Text style={[styles.coordinatesText, { color: theme.text }]}>
+                  Lat: {parseFloat(formData.latitude).toFixed(4)}, Long: {parseFloat(formData.longitude).toFixed(4)}
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={[styles.inputContainer, { backgroundColor: theme.inputBg }]}>
@@ -237,27 +359,29 @@ export default function AddSalon() {
             />
           </View>
 
+          <Text style={[styles.timeLabel, { color: theme.text }]}>Operating Hours</Text>
           <View style={styles.timeRow}>
-            <View style={[styles.timeInput, { backgroundColor: theme.inputBg }]}>
+            <TouchableOpacity
+              style={[styles.timePickerButton, { backgroundColor: theme.inputBg, borderColor: theme.border, borderWidth: 1 }]}
+              onPress={() => setShowOpeningPicker(true)}
+            >
               <Ionicons name="time-outline" size={20} color={theme.text} />
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="Opening Time"
-                placeholderTextColor={theme.text + '70'}
-                value={formData.opening_time}
-                onChangeText={(text) => setFormData({ ...formData, opening_time: text })}
-              />
-            </View>
-            <View style={[styles.timeInput, { backgroundColor: theme.inputBg }]}>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.timePickerLabel, { color: theme.text, opacity: 0.6 }]}>Opening</Text>
+                <Text style={[styles.timePickerValue, { color: theme.text }]}>{formData.opening_time}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.timePickerButton, { backgroundColor: theme.inputBg, borderColor: theme.border, borderWidth: 1 }]}
+              onPress={() => setShowClosingPicker(true)}
+            >
               <Ionicons name="time-outline" size={20} color={theme.text} />
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="Closing Time"
-                placeholderTextColor={theme.text + '70'}
-                value={formData.closing_time}
-                onChangeText={(text) => setFormData({ ...formData, closing_time: text })}
-              />
-            </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.timePickerLabel, { color: theme.text, opacity: 0.6 }]}>Closing</Text>
+                <Text style={[styles.timePickerValue, { color: theme.text }]}>{formData.closing_time}</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -271,6 +395,26 @@ export default function AddSalon() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {showOpeningPicker && (
+        <DateTimePicker
+          value={getDateFromTime(formData.opening_time)}
+          mode="time"
+          is24Hour={false}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, date) => handleTimeChange(event, date, 'opening')}
+        />
+      )}
+
+      {showClosingPicker && (
+        <DateTimePicker
+          value={getDateFromTime(formData.closing_time)}
+          mode="time"
+          is24Hour={false}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, date) => handleTimeChange(event, date, 'closing')}
+        />
+      )}
     </View>
   );
 }
@@ -296,8 +440,18 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginBottom: 15, minHeight: 55 },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, paddingVertical: 10 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  timeInput: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginRight: 10, height: 55 },
+  locationSection: { marginBottom: 15 },
+  locationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  locationLabel: { fontSize: 14, fontWeight: '600' },
+  locationButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  locationButtonText: { color: '#FFF', fontSize: 12, fontWeight: '600', marginLeft: 5 },
+  coordinatesBox: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 10, marginTop: 8 },
+  coordinatesText: { fontSize: 12, marginLeft: 6 },
+  timeLabel: { fontSize: 14, fontWeight: '600', marginBottom: 10 },
+  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  timePickerButton: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, marginHorizontal: 5 },
+  timePickerLabel: { fontSize: 11 },
+  timePickerValue: { fontSize: 16, fontWeight: '600', marginTop: 2 },
   submitButton: { marginHorizontal: 20, marginBottom: 40, borderRadius: 15, paddingVertical: 18, alignItems: 'center' },
   submitButtonText: { fontSize: 18, fontWeight: 'bold' },
 });
