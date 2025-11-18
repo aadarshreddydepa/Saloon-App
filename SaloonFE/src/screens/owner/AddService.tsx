@@ -14,7 +14,6 @@ import {
   FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { salonAPI, serviceAPI } from '../../services/api';
 import imageService from '../../services/imageService';
@@ -29,6 +28,7 @@ export default function AddService() {
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [salons, setSalons] = useState([]);
+  const [showSalonModal, setShowSalonModal] = useState(false);
   const [showDurationModal, setShowDurationModal] = useState(false);
   const [formData, setFormData] = useState({
     salon: preSelectedSalon?.id || '',
@@ -88,6 +88,17 @@ export default function AddService() {
     const hours = Math.floor(mins / 60);
     const remainingMins = mins % 60;
     return `${String(hours).padStart(2, '0')}:${String(remainingMins).padStart(2, '0')}`;
+  };
+
+  const getSelectedSalonName = () => {
+    if (preSelectedSalon) return preSelectedSalon.name;
+    const selectedSalon = salons.find((s: any) => s.id === formData.salon);
+    return selectedSalon ? selectedSalon.name : 'Select Salon';
+  };
+
+  const handleSelectSalon = (salonId: number) => {
+    setFormData({ ...formData, salon: salonId });
+    setShowSalonModal(false);
   };
 
   const handleSelectDuration = (value: string) => {
@@ -167,6 +178,7 @@ export default function AddService() {
         </View>
 
         <View style={[styles.formCard, { backgroundColor: theme.card }]}>
+          {/* Salon Selection */}
           {preSelectedSalon ? (
             <View style={[styles.salonInfoBox, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
               <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
@@ -180,18 +192,23 @@ export default function AddService() {
               </View>
             </View>
           ) : (
-            <View style={[styles.pickerContainer, { backgroundColor: theme.inputBg, borderColor: theme.border }]}>
-              <Ionicons name="storefront-outline" size={20} color={theme.text} style={styles.icon} />
-              <Picker
-                selectedValue={formData.salon}
-                onValueChange={(value) => setFormData({ ...formData, salon: value })}
-                style={[styles.picker, { color: theme.text }]}
+            <View style={styles.salonSection}>
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>Salon *</Text>
+              <TouchableOpacity
+                style={[styles.selectorButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+                onPress={() => setShowSalonModal(true)}
               >
-                <Picker.Item label="Select Salon *" value="" />
-                {salons.map((salon: any) => (
-                  <Picker.Item key={salon.id} label={salon.name} value={salon.id} />
-                ))}
-              </Picker>
+                <Ionicons name="storefront-outline" size={20} color={theme.text} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.selectorButtonLabel, { color: theme.text, opacity: 0.6 }]}>
+                    Select Salon
+                  </Text>
+                  <Text style={[styles.selectorButtonValue, { color: theme.text }]}>
+                    {getSelectedSalonName()}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.text} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -230,19 +247,19 @@ export default function AddService() {
             />
           </View>
 
-          {/* Duration Picker Button */}
+          {/* Duration Picker */}
           <View style={styles.durationSection}>
-            <Text style={[styles.durationLabel, { color: theme.text }]}>Duration *</Text>
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Duration *</Text>
             <TouchableOpacity
-              style={[styles.durationButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
+              style={[styles.selectorButton, { backgroundColor: theme.inputBg, borderColor: theme.border }]}
               onPress={() => setShowDurationModal(true)}
             >
               <Ionicons name="time-outline" size={20} color={theme.text} />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[styles.durationButtonLabel, { color: theme.text, opacity: 0.6 }]}>
+                <Text style={[styles.selectorButtonLabel, { color: theme.text, opacity: 0.6 }]}>
                   Service Duration
                 </Text>
-                <Text style={[styles.durationButtonValue, { color: theme.text }]}>
+                <Text style={[styles.selectorButtonValue, { color: theme.text }]}>
                   {formatDurationDisplay(formData.duration)} ({formData.duration} minutes)
                 </Text>
               </View>
@@ -261,6 +278,52 @@ export default function AddService() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Salon Selection Modal */}
+      <Modal
+        visible={showSalonModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSalonModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Select Salon</Text>
+              <TouchableOpacity onPress={() => setShowSalonModal(false)}>
+                <Ionicons name="close" size={28} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={salons}
+              keyExtractor={(item: any) => item.id.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.modalOption,
+                    { backgroundColor: formData.salon === item.id ? theme.primary + '20' : 'transparent' }
+                  ]}
+                  onPress={() => handleSelectSalon(item.id)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.modalOptionTitle, { color: theme.text }]}>
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.modalOptionSubtitle, { color: theme.text, opacity: 0.6 }]}>
+                      {item.address}
+                    </Text>
+                  </View>
+                  {formData.salon === item.id && (
+                    <Ionicons name="checkmark-circle" size={24} color={theme.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
+        </View>
+      </Modal>
 
       {/* Duration Selection Modal */}
       <Modal
@@ -284,16 +347,16 @@ export default function AddService() {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[
-                    styles.durationOption,
+                    styles.modalOption,
                     { backgroundColor: formData.duration === item.value ? theme.primary + '20' : 'transparent' }
                   ]}
                   onPress={() => handleSelectDuration(item.value)}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.durationOptionTime, { color: theme.text }]}>
+                    <Text style={[styles.modalOptionTitle, { color: theme.text }]}>
                       {item.label}
                     </Text>
-                    <Text style={[styles.durationOptionMinutes, { color: theme.text, opacity: 0.6 }]}>
+                    <Text style={[styles.modalOptionSubtitle, { color: theme.text, opacity: 0.6 }]}>
                       {item.minutes} minutes
                     </Text>
                   </View>
@@ -328,23 +391,22 @@ const styles = StyleSheet.create({
   salonInfoBox: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1 },
   salonInfoLabel: { fontSize: 12 },
   salonInfoName: { fontSize: 16, fontWeight: 'bold', marginTop: 2 },
-  pickerContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginBottom: 15, minHeight: 55, borderWidth: 1 },
-  picker: { flex: 1, marginLeft: -10 },
+  salonSection: { marginBottom: 15 },
+  durationSection: { marginBottom: 15 },
+  fieldLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  selectorButton: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, borderWidth: 1 },
+  selectorButtonLabel: { fontSize: 11 },
+  selectorButtonValue: { fontSize: 16, fontWeight: '600', marginTop: 2 },
   inputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 15, paddingHorizontal: 15, marginBottom: 15, minHeight: 55 },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, paddingVertical: 10 },
-  durationSection: { marginBottom: 15 },
-  durationLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
-  durationButton: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, borderWidth: 1 },
-  durationButtonLabel: { fontSize: 11 },
-  durationButtonValue: { fontSize: 16, fontWeight: '600', marginTop: 2 },
   submitButton: { marginHorizontal: 20, marginBottom: 40, borderRadius: 15, paddingVertical: 18, alignItems: 'center' },
   submitButtonText: { fontSize: 18, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 25, borderTopRightRadius: 25, maxHeight: '70%', paddingBottom: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
   modalTitle: { fontSize: 20, fontWeight: 'bold' },
-  durationOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
-  durationOptionTime: { fontSize: 18, fontWeight: '600' },
-  durationOptionMinutes: { fontSize: 13, marginTop: 2 },
+  modalOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
+  modalOptionTitle: { fontSize: 18, fontWeight: '600' },
+  modalOptionSubtitle: { fontSize: 13, marginTop: 2 },
 });
