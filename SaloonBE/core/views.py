@@ -386,6 +386,35 @@ class BarberViewSet(viewsets.ModelViewSet):
         join_request.save()
         
         return Response({'message': 'Request rejected'})
+    @action(detail=True, methods=['post'], url_path='leave-salon', permission_classes=[IsAuthenticated])
+    def leave_salon(self, request, pk=None):
+
+        """Remove barber from salon (owner initiated)"""
+        barber = self.get_object()
+        
+        # Check if requesting user is the salon owner
+        if barber.salon and barber.salon.owner != request.user:
+            return Response(
+                {'error': 'Only salon owner can remove barbers'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not barber.salon:
+            return Response(
+                {'error': 'Barber is not assigned to any salon'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Store salon for response
+        salon_name = barber.salon.name
+        
+        # Remove barber from salon
+        barber.salon = None
+        barber.save()
+        
+        return Response({
+            'message': f'Barber removed from {salon_name} successfully'
+        })
 
 
 # ============ BOOKING VIEWSET ============

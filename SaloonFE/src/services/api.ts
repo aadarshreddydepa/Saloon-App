@@ -82,6 +82,7 @@ export const barberAPI = {
   getJoinRequests: (salonId: number) => api.get(`/barbers/join-requests/?salon=${salonId}`),
   approveRequest: (requestId: number) => api.post(`/barbers/approve-request/${requestId}/`),
   rejectRequest: (requestId: number) => api.post(`/barbers/reject-request/${requestId}/`),
+  removeFromSalon: (barberId: number) => api.post(`/barbers/${barberId}/leave_salon/`)
 };
 
 export const reviewAPI = {
