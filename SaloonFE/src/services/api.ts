@@ -37,6 +37,7 @@ export const authAPI = {
   login: (credentials: any) => api.post('/auth/login/', credentials),
   getProfile: () => api.get('/auth/profile/'),
   updateProfile: (data: any) => api.put('/auth/profile/', data),
+  changePassword: (data: { old_password: string; new_password: string }) => api.post('/auth/change-password/', data),
 };
 
 export const salonAPI = {

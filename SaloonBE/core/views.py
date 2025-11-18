@@ -11,7 +11,7 @@ from django.db.models import Sum
 
 from .models import BarberJoinRequest, Salon, Service, Barber, Booking, Payment, Review
 from .serializers import (
-    RegisterSerializer, UserSerializer, UserProfileSerializer,
+    ChangePasswordSerializer, RegisterSerializer, UserSerializer, UserProfileSerializer,
     SalonSerializer, SalonListSerializer, SalonCreateUpdateSerializer,
     ServiceSerializer, BarberSerializer, BarberListSerializer, BarberDetailSerializer,
     BookingSerializer, BookingCreateSerializer, BookingUpdateSerializer,
@@ -698,3 +698,25 @@ class ReviewViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(customer=self.request.user)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """
+    Change user password
+    """
+    serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+    
+    if serializer.is_valid():
+        # Set new password
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        
+        return Response({
+            'message': 'Password changed successfully',
+            'detail': 'Please login again with your new password'
+        }, status=status.HTTP_200_OK)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

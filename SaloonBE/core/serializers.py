@@ -339,3 +339,20 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
         if value < 1 or value > 5:
             raise serializers.ValidationError("Rating must be between 1 and 5.")
         return value
+#=========== CHANGE PASSWORD SERIALIZERS ============
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True, validators=[validate_password])
+    
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect")
+        return value
+    
+    def validate(self, attrs):
+        if attrs.get('old_password') == attrs.get('new_password'):
+            raise serializers.ValidationError({
+                "new_password": "New password cannot be the same as current password"
+            })
+        return attrs
