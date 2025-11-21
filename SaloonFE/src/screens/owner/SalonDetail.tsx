@@ -12,6 +12,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { salonAPI, serviceAPI } from "../../services/api";
+import { fonts } from "../../config/fonts";
 
 export default function SalonDetail() {
   const navigation = useNavigation();
@@ -228,8 +229,6 @@ export default function SalonDetail() {
               },
             ]}
             onPress={handleToggleSalonStatus}
-
-
             disabled={toggling}
           >
             <Ionicons
@@ -282,7 +281,9 @@ export default function SalonDetail() {
             </Text>
             <TouchableOpacity
               style={styles.addServiceButton}
-              onPress={() => navigation.navigate("AddService", { salon: salon })}
+              onPress={() =>
+                navigation.navigate("AddService", { salon: salon })
+              }
             >
               <Ionicons name="add-circle" size={24} color="#FFF" />
               <Text style={styles.addServiceText}>Add</Text>
@@ -372,7 +373,7 @@ export default function SalonDetail() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { fontSize: 16 },
+  loadingText: { fontSize: 16, fontFamily: fonts.body.regular },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -381,7 +382,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingHorizontal: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: "bold" },
+  headerTitle: { fontSize: 20, fontFamily: fonts.heading.bold },
   infoCard: { margin: 20, padding: 20, borderRadius: 20 },
   infoHeader: {
     flexDirection: "row",
@@ -389,7 +390,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
   },
-  salonName: { fontSize: 24, fontWeight: "bold", flex: 1 },
+  salonName: { fontSize: 24, fontFamily: fonts.heading.bold, flex: 1 },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -404,7 +405,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
     marginRight: 6,
   },
-  statusText: { color: "#FFF", fontSize: 12, fontWeight: "600" },
+  statusText: { color: "#FFF", fontSize: 12, fontFamily: fonts.body.semiBold },
   warningBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -418,11 +419,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginLeft: 8,
     flex: 1,
-    fontWeight: "600",
+    fontFamily: fonts.body.semiBold,
   },
   infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  infoText: { fontSize: 16, marginLeft: 12, flex: 1 },
-  description: { fontSize: 14, marginTop: 12, lineHeight: 20 },
+  infoText: {
+    fontSize: 16,
+    marginLeft: 12,
+    flex: 1,
+    fontFamily: fonts.body.regular,
+  },
+  description: {
+    fontSize: 14,
+    marginTop: 12,
+    lineHeight: 20,
+    fontFamily: fonts.body.regular,
+  },
   actionsContainer: {
     flexDirection: "row",
     paddingHorizontal: 20,
@@ -440,7 +451,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: "#FFF",
     fontSize: 14,
-    fontWeight: "bold",
+    fontFamily: fonts.heading.bold,
     marginLeft: 8,
   },
   barberManagementButton: {
@@ -460,8 +471,12 @@ const styles = StyleSheet.create({
     marginRight: 15,
   },
   barberInfo: { flex: 1 },
-  barberTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 4 },
-  barberSubtitle: { fontSize: 14 },
+  barberTitle: {
+    fontSize: 18,
+    fontFamily: fonts.heading.bold,
+    marginBottom: 4,
+  },
+  barberSubtitle: { fontSize: 14, fontFamily: fonts.body.regular },
   servicesSection: { paddingHorizontal: 20, marginBottom: 20 },
   servicesSectionHeader: {
     flexDirection: "row",
@@ -469,7 +484,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
   },
-  sectionTitle: { fontSize: 20, fontWeight: "bold" },
+  sectionTitle: { fontSize: 20, fontFamily: fonts.heading.bold },
   addServiceButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -478,26 +493,44 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
   },
-  addServiceText: { color: "#FFF", fontSize: 14, fontWeight: "600", marginLeft: 6 },
+  addServiceText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontFamily: fonts.body.semiBold,
+    marginLeft: 6,
+  },
   emptyServices: { padding: 40, borderRadius: 20, alignItems: "center" },
-  emptyText: { fontSize: 18, fontWeight: "bold", marginTop: 15 },
-  emptySubtext: { fontSize: 14, marginTop: 8, textAlign: "center" },
+  emptyText: { fontSize: 18, fontFamily: fonts.heading.bold, marginTop: 15 },
+  emptySubtext: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: "center",
+    fontFamily: fonts.body.regular,
+  },
   serviceCard: { padding: 15, borderRadius: 15, marginBottom: 12 },
   serviceHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  serviceName: { fontSize: 16, fontWeight: "bold", flex: 1 },
-  servicePrice: { fontSize: 16, fontWeight: "bold" },
-  serviceDescription: { fontSize: 14, marginBottom: 10 },
+  serviceName: { fontSize: 16, fontFamily: fonts.heading.semiBold, flex: 1 },
+  servicePrice: { fontSize: 16, fontFamily: fonts.heading.bold },
+  serviceDescription: {
+    fontSize: 14,
+    marginBottom: 10,
+    fontFamily: fonts.body.regular,
+  },
   serviceFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   serviceDuration: { flexDirection: "row", alignItems: "center" },
-  durationText: { fontSize: 14, marginLeft: 6 },
+  durationText: { fontSize: 14, marginLeft: 6, fontFamily: fonts.body.regular },
   serviceStatus: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  serviceStatusText: { color: "#FFF", fontSize: 11, fontWeight: "600" },
+  serviceStatusText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontFamily: fonts.body.semiBold,
+  },
 });
